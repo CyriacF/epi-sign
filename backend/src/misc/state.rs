@@ -8,12 +8,14 @@ use diesel::{
 #[derive(Clone)]
 pub struct GlobalState {
     pub db_pool: Arc<Pool<ConnectionManager<PgConnection>>>,
+    pub register_key: String,
 }
 
 impl GlobalState {
     pub fn new() -> Self {
         dotenvy::dotenv().ok();
         let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let register_key = std::env::var("REGISTER_KEY").expect("REGISTER_KEY must be set");
         let manager = ConnectionManager::<PgConnection>::new(db_url);
         let db_pool = Pool::builder()
             .max_size(10)
@@ -22,6 +24,7 @@ impl GlobalState {
 
         GlobalState {
             db_pool: Arc::new(db_pool),
+            register_key
         }
     }
 

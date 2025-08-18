@@ -81,8 +81,8 @@ export async function login(username: string, password: string, customFetch?: ty
     }
 }
 
-export async function register(username: string, password: string, customFetch?: typeof fetch): Promise<void> {
-    const payload: RegisterPayload = { username, password };
+export async function register(username: string, password: string, key: string, customFetch?: typeof fetch): Promise<void> {
+    const payload: RegisterPayload = { username, password, key };
     
     await apiCall<void>('/auth/register', {
         method: 'POST',

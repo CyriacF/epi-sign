@@ -31,4 +31,7 @@ pub struct RegisterPayload {
     ))]
     #[schema(example = "password123")]
     pub password: String,
+    
+    #[schema(example = "key")]
+    pub key: String
 }
