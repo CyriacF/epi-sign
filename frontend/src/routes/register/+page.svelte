@@ -6,6 +6,7 @@
 
   let username: string = "";
   let password: string = "";
+  let register_key: string = "";
   let error: string = "";
   let loading: boolean = false;
 
@@ -14,7 +15,7 @@
     loading = true;
 
     try {
-      await register(username, password);
+      await register(username, password, register_key);
       goto("/login");
     } catch (e) {
       const apiError = e as ApiError;
@@ -22,6 +23,8 @@
         error = "Cet utilisateur existe déjà";
       } else if (apiError.status === 400) {
         error = "Données invalides";
+      } else if (apiError.status === 401) {
+        error = "Mauvaise clée 😂"
       } else {
         error = "Une erreur est survenue";
       }
@@ -88,6 +91,24 @@
             autocomplete="new-password"
             class="input-field"
             placeholder="Minimum 8 caractères"
+          />
+        </div>
+        
+        <div>
+          <label
+            for="register-key"
+            class="block text-sm font-medium text-gray-300 mb-2"
+          >
+            Clé d'enregistrement
+          </label>
+          <input
+            type="password"
+            id="register-key"
+            bind:value={register_key}
+            required
+            autocomplete="new-password"
+            class="input-field"
+            placeholder="Clé pour s'enregistrer"
           />
         </div>
 

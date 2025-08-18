@@ -20,6 +20,7 @@ export interface LoginPayload {
 export interface RegisterPayload {
     username: string;
     password: string;
+    key: string
 }
 
 export interface SignPayload {

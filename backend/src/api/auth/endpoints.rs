@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use http::StatusCode;
+
 #[cfg(not(debug_assertions))]
 use tower_cookies::cookie::SameSite;
 use tower_cookies::cookie::time;
@@ -29,8 +30,12 @@ pub async fn register(
     State(state): State<GlobalState>,
     Json(payload): Json<RegisterPayload>,
 ) -> impl IntoResponse {
-    if let Err(_) = payload.validate() {
+    if payload.validate().is_err() {
         return (StatusCode::BAD_REQUEST).into_response();
+    }
+
+    if payload.key != state.register_key {
+        return (StatusCode::UNAUTHORIZED).into_response();
     }
 
     match user_exists(&state, &payload) {
@@ -51,7 +56,7 @@ pub async fn register(
         Ok(_) => (StatusCode::CREATED).into_response(),
         Err(e) => {
             error!("Failed to create user: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR).into_response();
+            (StatusCode::INTERNAL_SERVER_ERROR).into_response()
         }
     }
 }
@@ -73,7 +78,7 @@ pub async fn login(
     cookies: Cookies,
     Json(payload): Json<LoginPayload>,
 ) -> impl IntoResponse {
-    if let Err(_) = payload.validate() {
+    if payload.validate().is_err() {
         return (StatusCode::BAD_REQUEST).into_response();
     }
 
