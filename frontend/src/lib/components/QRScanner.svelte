@@ -269,11 +269,18 @@
     setupZoomCapabilities();
     applyCustomStyles();
     fixIOSVideoElement();
-    const supports = (window as any).BarcodeDetector && (await (window as any).BarcodeDetector.getSupportedFormats?.());
-    if (!supports || !supports.includes("qr_code")) {
-      throw new Error("BarcodeDetector non supporté");
+    let SupportedDetector = (window as any).BarcodeDetector;
+    let formats: string[] | undefined = undefined;
+    if (SupportedDetector && SupportedDetector.getSupportedFormats) {
+      try {
+        formats = await SupportedDetector.getSupportedFormats();
+      } catch (_) {}
     }
-    barcodeDetector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
+    if (!SupportedDetector || (formats && !formats.includes("qr_code"))) {
+      const { BarcodeDetector: Polyfill } = await import("barcode-detector");
+      SupportedDetector = Polyfill as any;
+    }
+    barcodeDetector = new SupportedDetector({ formats: ["qr_code"] });
     if (googleScanTimer) {
       window.clearInterval(googleScanTimer);
       googleScanTimer = null;
