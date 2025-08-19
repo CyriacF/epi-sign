@@ -1,19 +1,29 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte";
-  import { Html5Qrcode } from "html5-qrcode";
+  
   import { TriangleAlert, X } from "@lucide/svelte";
 
   export let onScan: (result: string) => void;
   export let onClose: () => void;
   export let onError: (error: string) => void;
 
-  let scanner: Html5Qrcode | null = null;
   let scannerElement: HTMLElement;
   let hasPermission: boolean = false;
   let isChecking: boolean = true;
   let permissionError: string = "";
   let isIOS: boolean = false;
   let isScanning: boolean = false;
+  let videoEl: HTMLVideoElement | null = null;
+  let mediaStream: MediaStream | null = null;
+  let videoTrack: MediaStreamTrack | null = null;
+  let googleScanTimer: number | null = null;
+  let barcodeDetector: any = null;
+  let zoomSupported: boolean = false;
+  let minZoom = 1;
+  let maxZoom = 1;
+  let zoomStep = 0.1;
+  let zoom = 1;
+  let cssZoom = 1;
 
   onMount(async () => {
     // Détecter iOS
@@ -25,11 +35,7 @@
   });
 
   onDestroy(() => {
-    if (scanner) {
-      scanner.stop();
-      scanner.clear();
-      scanner = null;
-    }
+    stopGoogleScanning();
   });
 
   async function checkCameraPermission() {
@@ -123,33 +129,8 @@
         setTimeout(() => initializeScanner(), 500);
         return;
       }
-
-      // Nettoyer toute instance précédente
-      await cleanupScanner();
-
-      console.log("Initialisation du scanner QR Code");
-      scanner = new Html5Qrcode("qr-reader");
-      console.log("Scanner créé avec succès");
-
-      // Obtenir les caméras disponibles
-      const cameras = await Html5Qrcode.getCameras();
-      console.log("Caméras trouvées:", cameras);
-
-      if (cameras && cameras.length > 0) {
-        // Préférer la caméra arrière
-        const backCamera =
-          cameras.find(
-            (camera) =>
-              camera.label.toLowerCase().includes("back") ||
-              camera.label.toLowerCase().includes("rear") ||
-              camera.label.toLowerCase().includes("environment")
-          ) || cameras[0];
-
-        console.log("Caméra sélectionnée:", backCamera);
-        await startScanning(backCamera.id);
-      } else {
-        throw new Error("Aucune caméra trouvée");
-      }
+      await stopGoogleScanning();
+      await startGoogleScanning();
     } catch (err) {
       console.error("Erreur d'initialisation:", err);
       if (err instanceof Error) {
@@ -158,61 +139,182 @@
     }
   }
 
-  async function startScanning(cameraId: string) {
+  function initZoomFromVideoElement() {
+    const video = document.querySelector(
+      "#qr-reader video"
+    ) as HTMLVideoElement | null;
+    if (video && (video as any).srcObject) {
+      videoEl = video;
+      mediaStream = (video as any).srcObject as MediaStream;
+      const tracks = mediaStream.getVideoTracks();
+      videoTrack = tracks && tracks.length > 0 ? tracks[0] : null;
+      setupZoomCapabilities();
+    }
+  }
+
+  function setupZoomCapabilities() {
+    zoomSupported = false;
+    minZoom = 1;
+    maxZoom = 1;
+    zoomStep = 0.1;
+    zoom = 1;
+    cssZoom = 1;
+    if (!videoTrack) {
+      applyCssZoom();
+      return;
+    }
+    const caps: any = (videoTrack as any).getCapabilities
+      ? (videoTrack as any).getCapabilities()
+      : null;
+    if (caps && typeof caps.zoom === "object") {
+      zoomSupported = true;
+      minZoom = caps.zoom.min ?? 1;
+      maxZoom = caps.zoom.max ?? Math.max(2, minZoom);
+      zoomStep = caps.zoom.step ?? 0.1;
+      zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
+      applyTrackZoom(zoom);
+    } else {
+      zoomSupported = false;
+      minZoom = 1;
+      maxZoom = 3;
+      zoomStep = 0.1;
+      zoom = 1;
+      cssZoom = 1;
+      applyCssZoom();
+    }
+  }
+
+  async function applyTrackZoom(val: number) {
+    if (!videoTrack) return;
+    const clamped = Math.min(Math.max(val, minZoom), maxZoom);
+    zoom = clamped;
     try {
-      if (!scanner) {
-        console.error("Scanner non initialisé");
-        return;
-      }
+      await (videoTrack as any).applyConstraints({ advanced: [{ zoom: clamped }] });
+    } catch (e) {
+      applyCssZoomFromTrackZoom();
+    }
+  }
 
-      const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: isIOS ? 1.0 : 1.7777778,
-        videoConstraints: {
-          deviceId: cameraId,
-          facingMode: "environment",
-        },
-      };
+  function applyCssZoomFromTrackZoom() {
+    const range = maxZoom - minZoom || 1;
+    const normalized = (zoom - minZoom) / range;
+    cssZoom = 1 + normalized * 1.5;
+    applyCssZoom();
+  }
 
-      console.log("Démarrage du scan avec config:", config);
+  function applyCssZoom() {
+    const video = videoEl || (document.querySelector("#qr-reader video") as HTMLVideoElement | null);
+    if (video) {
+      const scale = cssZoom || 1;
+      video.style.transformOrigin = "center center";
+      video.style.transform = `scale(${scale})`;
+    }
+  }
 
-      // Démarrer le scan
-      await scanner.start(
-        cameraId,
-        config,
-        async (decodedText: string) => {
-          console.log("QR Code détecté:", decodedText);
+  function decreaseZoom() {
+    if (zoomSupported) {
+      applyTrackZoom(zoom - zoomStep);
+    } else {
+      cssZoom = Math.max(1, (cssZoom || 1) - 0.1);
+      applyCssZoom();
+    }
+  }
 
-          // Arrêter le scanner avant de fermer
-          await stopScanner();
+  function increaseZoom() {
+    if (zoomSupported) {
+      applyTrackZoom(zoom + zoomStep);
+    } else {
+      const targetMax = 3;
+      cssZoom = Math.min(targetMax, (cssZoom || 1) + 0.1);
+      applyCssZoom();
+    }
+  }
 
-          // Appeler les callbacks
-          onScan(decodedText);
-          onClose();
-          handleClose();
-        },
-        (errorMessage: string) => {
-          // Ignorer les erreurs de scan normales
-          if (!errorMessage.includes("NotFoundException")) {
-            console.warn("Erreur de scan:", errorMessage);
+  function setZoomFromSlider(v: number) {
+    if (zoomSupported) {
+      applyTrackZoom(v);
+    } else {
+      cssZoom = v;
+      applyCssZoom();
+    }
+  }
+
+  async function startGoogleScanning() {
+    const container = document.getElementById("qr-reader");
+    if (!container) return;
+    container.innerHTML = "";
+    const vid = document.createElement("video");
+    vid.setAttribute("playsinline", "true");
+    vid.setAttribute("autoplay", "true");
+    vid.setAttribute("muted", "true");
+    vid.style.width = "100%";
+    vid.style.height = "100%";
+    vid.style.objectFit = "cover";
+    vid.style.borderRadius = "12px";
+    container.appendChild(vid);
+    videoEl = vid;
+    const constraints: MediaStreamConstraints = {
+      video: {
+        facingMode: "environment",
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    };
+    mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+    vid.srcObject = mediaStream;
+    await vid.play().catch(() => {});
+    const tracks = mediaStream.getVideoTracks();
+    videoTrack = tracks && tracks.length > 0 ? tracks[0] : null;
+    setupZoomCapabilities();
+    applyCustomStyles();
+    fixIOSVideoElement();
+    const supports = (window as any).BarcodeDetector && (await (window as any).BarcodeDetector.getSupportedFormats?.());
+    if (!supports || !supports.includes("qr_code")) {
+      throw new Error("BarcodeDetector non supporté");
+    }
+    barcodeDetector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
+    if (googleScanTimer) {
+      window.clearInterval(googleScanTimer);
+      googleScanTimer = null;
+    }
+    googleScanTimer = window.setInterval(async () => {
+      if (!videoEl || videoEl.readyState < 2) return;
+      try {
+        const barcodes = await barcodeDetector.detect(videoEl);
+        if (barcodes && barcodes.length > 0) {
+          const qr = barcodes.find((b: any) => (b.format || b.rawValue) && (b.format === "qr_code" || true));
+          const value = qr?.rawValue || barcodes[0]?.rawValue;
+          if (value) {
+            await stopGoogleScanning();
+            onScan(value);
+            onClose();
+            handleClose();
           }
         }
-      );
+      } catch (e) {}
+    }, 200);
+    isScanning = true;
+  }
 
-      isScanning = true;
-      console.log("Scanner démarré avec succès");
-
-      // Appliquer les styles après le démarrage
-      setTimeout(() => {
-        applyCustomStyles();
-        fixIOSVideoElement();
-      }, 500);
-    } catch (err) {
-      console.error("Erreur de démarrage du scan:", err);
-      permissionError = `Erreur de démarrage: ${err}`;
-      hasPermission = false;
+  async function stopGoogleScanning() {
+    if (googleScanTimer) {
+      window.clearInterval(googleScanTimer);
+      googleScanTimer = null;
     }
+    if (videoEl) {
+      try {
+        await videoEl.pause();
+      } catch {}
+      videoEl.srcObject = null as any;
+      videoEl = null;
+    }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((t) => t.stop());
+      mediaStream = null;
+    }
+    videoTrack = null;
+    isScanning = false;
   }
 
   function applyCustomStyles() {
@@ -238,9 +340,7 @@
 
     const buttons = scannerContainer.querySelectorAll("button");
     buttons.forEach((button) => {
-      if (!button.id?.includes("html5-qrcode")) {
-        button.classList.add("btn-secondary", "text-sm", "m-2");
-      }
+      button.classList.add("btn-secondary", "text-sm", "m-2");
     });
   }
 
@@ -302,35 +402,7 @@
   }
 
   async function cleanupScanner() {
-    if (scanner) {
-      try {
-        // Arrêter le scan si en cours
-        if (isScanning) {
-          await scanner.stop();
-          console.log("Scanner arrêté");
-        }
-
-        // Clear pour libérer les ressources
-        scanner.clear();
-        console.log("Scanner nettoyé");
-      } catch (err) {
-        console.error("Erreur lors du nettoyage du scanner:", err);
-      } finally {
-        scanner = null;
-        isScanning = false;
-      }
-    }
-  }
-
-  async function stopScanner() {
-    if (scanner && isScanning) {
-      try {
-        await scanner.stop();
-        isScanning = false;
-      } catch (err) {
-        console.error("Erreur lors de l'arrêt du scanner:", err);
-      }
-    }
+    await stopGoogleScanning();
   }
 
   async function handleClose() {
@@ -361,7 +433,18 @@
   </div>
 
   <!-- Scanner ou messages d'erreur -->
-  <div class="flex-1 flex items-center justify-center p-4">
+  <div class="flex-1 flex flex-col p-4 gap-3">
+    <div class="flex items-center justify-end">
+      <div class="flex items-center gap-2">
+        <button class="btn-secondary px-3" on:click={decreaseZoom}>-</button>
+        {#if zoomSupported}
+          <input type="range" min={minZoom} max={maxZoom} step={zoomStep} bind:value={zoom} on:input={(e: any) => setZoomFromSlider(parseFloat(e.currentTarget.value))} class="w-40" />
+        {:else}
+          <input type="range" min={1} max={3} step={0.1} bind:value={cssZoom} on:input={(e: any) => setZoomFromSlider(parseFloat(e.currentTarget.value))} class="w-40" />
+        {/if}
+        <button class="btn-secondary px-3" on:click={increaseZoom}>+</button>
+      </div>
+    </div>
     {#if isChecking}
       <div class="text-center">
         <div
