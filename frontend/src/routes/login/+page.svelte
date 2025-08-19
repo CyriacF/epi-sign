@@ -33,7 +33,7 @@
   <div class="w-full max-w-md">
     <!-- Logo mobile centré -->
     <h1
-      class="text-4xl sm:text-5xl font-bold text-center mb-2 pb-2 gradient-text"
+      class="text-4xl sm:text-5xl font-bold text-center mb-2 pb-2 gradient-text title"
     >
       EpiSign
     </h1>
@@ -103,7 +103,7 @@
       <div class="mt-6 text-center">
         <a
           href="/register"
-          class="text-purple-400 active:text-purple-300 font-medium transition-colors"
+          class="text-red-500 hover:text-red-400 active:text-red-500 font-medium transition-colors"
         >
           Créer un compte
         </a>

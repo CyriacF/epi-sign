@@ -37,7 +37,7 @@
   class="block glass-effect-card rounded-xl p-4 user-card-subtle {!user.jwtIsExpired
     ? 'cursor-pointer'
     : 'cursor-not-allowed opacity-50'} 
-    {isSelected ? 'ring-2 ring-purple-500/50 bg-purple-500/10' : ''}"
+    {isSelected ? 'ring-2 ring-red-600/40 bg-red-600/10' : ''}"
   in:fly={{ x: -20, duration: 300, easing: quintOut }}
 >
   <div class="flex items-center gap-3">
@@ -52,7 +52,7 @@
       />
       {#if isSelected && !user.jwtIsExpired}
         <div
-          class="absolute inset-0 rounded border-2 border-purple-400 animate-pulse pointer-events-none"
+          class="absolute inset-0 rounded border-2 border-red-600 animate-pulse pointer-events-none"
           in:scale={{ duration: 200, easing: quintOut }}
         ></div>
       {/if}
@@ -61,13 +61,13 @@
     <div class="flex-1 min-w-0">
       <div
         class="font-semibold text-base transition-colors duration-200 ease-out {isSelected
-          ? 'text-purple-200'
+          ? 'text-white'
           : ''} flex items-center gap-2"
       >
         <span class="truncate">{user.username}</span>
         {#if isCurrentUser}
           <span
-            class="inline-block px-2 py-0.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold rounded-full"
+            class="inline-block px-2 py-0.5 bg-white text-gray-900 text-xs font-bold rounded-full"
             in:scale={{ duration: 300, easing: quintOut }}
           >
             Toi

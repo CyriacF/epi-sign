@@ -35,7 +35,7 @@
     {#if loading}
       <div class="flex justify-center py-12">
         <span
-          class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"
+          class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"
         ></span>
       </div>
     {:else if users.length === 0}
@@ -51,14 +51,14 @@
             isSelected={selectedUsers.has(currentUserData.id)}
             on:toggle={handleUserToggle}
           />
-          <!-- Séparateur néon simple -->
+          <!-- Séparateur simple -->
           {#if otherUsers.length > 0}
             <div
               class="my-4 flex justify-center items-center"
               in:fade={{ delay: 200, duration: 400 }}
             >
               <div
-                class="h-1 w-3/4 bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 rounded-full shadow-lg shadow-purple-500/50 animate-pulse"
+                class="h-1 w-3/4 bg-white/10 rounded-full"
               ></div>
             </div>
           {/if}

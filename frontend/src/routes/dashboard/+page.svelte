@@ -252,21 +252,21 @@
         >
           <div class="flex items-center gap-2">
             <span
-              class="flex-shrink-0 w-6 h-6 bg-purple-500/20 text-purple-400 rounded-full flex items-center justify-center text-xs font-bold"
+              class="flex-shrink-0 w-6 h-6 bg-red-600/10 text-red-500 rounded-full flex items-center justify-center text-xs font-bold"
               >1</span
             >
             <span>Entrez l'URL Epitech</span>
           </div>
           <div class="flex items-center gap-2">
             <span
-              class="flex-shrink-0 w-6 h-6 bg-purple-500/20 text-purple-400 rounded-full flex items-center justify-center text-xs font-bold"
+              class="flex-shrink-0 w-6 h-6 bg-red-600/10 text-red-500 rounded-full flex items-center justify-center text-xs font-bold"
               >2</span
             >
             <span>Sélectionnez les utilisateurs</span>
           </div>
           <div class="flex items-center gap-2">
             <span
-              class="flex-shrink-0 w-6 h-6 bg-purple-500/20 text-purple-400 rounded-full flex items-center justify-center text-xs font-bold"
+              class="flex-shrink-0 w-6 h-6 bg-red-600/10 text-red-500 rounded-full flex items-center justify-center text-xs font-bold"
               >3</span
             >
             <span>Lancez la signature</span>
@@ -350,10 +350,10 @@
         in:fly={{ y: 20, duration: 400, delay: 200, easing: quintOut }}
       >
         <div
-          class="flex items-start gap-3 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20"
+          class="flex items-start gap-3 p-3 rounded-xl bg-white/10 border border-white/20"
         >
           <span
-            class="flex-shrink-0 w-8 h-8 bg-purple-500/30 text-purple-300 rounded-full flex items-center justify-center text-sm font-bold mt-0.5"
+            class="flex-shrink-0 w-8 h-8 bg-white text-gray-900 rounded-full flex items-center justify-center text-sm font-bold mt-0.5"
             >1</span
           >
           <div>
@@ -365,10 +365,10 @@
         </div>
 
         <div
-          class="flex items-start gap-3 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20"
+          class="flex items-start gap-3 p-3 rounded-xl bg-white/10 border border-white/20"
         >
           <span
-            class="flex-shrink-0 w-8 h-8 bg-purple-500/30 text-purple-300 rounded-full flex items-center justify-center text-sm font-bold mt-0.5"
+            class="flex-shrink-0 w-8 h-8 bg-white text-gray-900 rounded-full flex items-center justify-center text-sm font-bold mt-0.5"
             >2</span
           >
           <div>
@@ -382,10 +382,10 @@
         </div>
 
         <div
-          class="flex items-start gap-3 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20"
+          class="flex items-start gap-3 p-3 rounded-xl bg-white/10 border border-white/20"
         >
           <span
-            class="flex-shrink-0 w-8 h-8 bg-purple-500/30 text-purple-300 rounded-full flex items-center justify-center text-sm font-bold mt-0.5"
+            class="flex-shrink-0 w-8 h-8 bg-white text-gray-900 rounded-full flex items-center justify-center text-sm font-bold mt-0.5"
             >3</span
           >
           <div>

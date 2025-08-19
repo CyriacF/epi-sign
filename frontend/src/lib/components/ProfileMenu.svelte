@@ -91,7 +91,7 @@
   >
     <!-- Avatar/Initial -->
     <div
-      class="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm font-bold transition-transform duration-200 ease-out {isOpen
+      class="w-8 h-8 rounded-lg bg-white text-gray-900 flex items-center justify-center text-sm font-bold transition-transform duration-200 ease-out {isOpen
         ? 'scale-110'
         : ''}"
     >
@@ -148,7 +148,7 @@
       >
         <div class="flex items-center gap-3">
           <div
-            class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-lg font-bold transform transition-transform duration-200 ease-out hover:scale-110"
+            class="w-10 h-10 rounded-xl bg-white text-gray-900 flex items-center justify-center text-lg font-bold transform transition-transform duration-200 ease-out hover:scale-110"
           >
             {$currentUser?.username?.charAt(0).toUpperCase() || "?"}
           </div>
@@ -212,7 +212,7 @@
           role="menuitem"
         >
           <User
-            class="w-5 h-5 text-gray-400 transition-colors duration-200 ease-out group-hover:text-purple-400"
+            class="w-5 h-5 text-gray-400 transition-colors duration-200 ease-out group-hover:text-red-500"
           />
           <div class="flex-1">
             <p class="font-medium text-sm">Profil</p>
@@ -221,7 +221,7 @@
             </p>
           </div>
           <svg
-            class="w-4 h-4 text-gray-400 transition-all duration-200 ease-out group-hover:translate-x-1 group-hover:text-purple-400"
+            class="w-4 h-4 text-gray-400 transition-all duration-200 ease-out group-hover:translate-x-1 group-hover:text-red-500"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"

@@ -59,7 +59,7 @@
       case "serviceUnavailable":
         return {
           icon: Wifi,
-          color: "text-purple-400 bg-purple-500/10 border-purple-500/30",
+          color: "text-gray-400 bg-gray-500/10 border-gray-500/30",
           title: "Service indisponible",
           description: "Le service de signature n'est pas accessible",
         };

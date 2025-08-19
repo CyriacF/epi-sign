@@ -74,10 +74,10 @@
           <div class="flex items-center gap-4 sm:gap-6">
             <div class="flex-shrink-0">
               <div
-                class="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center transition-transform duration-200 ease-out
+                class="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white flex items-center justify-center transition-transform duration-200 ease-out
                        {isDesktop ? '' : 'group-hover:scale-110'}"
               >
-                <User class="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                <User class="w-6 h-6 sm:w-8 sm:h-8 text-gray-900" />
               </div>
             </div>
             <div class="flex-1 text-left">
@@ -93,10 +93,10 @@
                 Scanner un QR code pour me signer automatiquement
               </p>
               <div
-                class="mt-3 flex items-center gap-2 text-xs sm:text-sm text-green-400"
+                class="mt-3 flex items-center gap-2 text-xs sm:text-sm text-red-500"
               >
                 <div
-                  class="w-2 h-2 bg-green-400 rounded-full {isDesktop
+                  class="w-2 h-2 bg-red-500 rounded-full {isDesktop
                     ? ''
                     : 'animate-pulse'}"
                 ></div>
@@ -108,7 +108,7 @@
                 class="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 transition-all duration-200 ease-out
                        {isDesktop
                   ? ''
-                  : 'group-hover:text-green-400 group-hover:translate-x-1'}"
+                  : 'group-hover:text-red-500 group-hover:translate-x-1'}"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -141,9 +141,9 @@
           <div class="flex items-center gap-4 sm:gap-6">
             <div class="flex-shrink-0">
               <div
-                class="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-200 ease-out"
+                class="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white flex items-center justify-center group-hover:scale-110 transition-transform duration-200 ease-out"
               >
-                <Users class="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                <Users class="w-6 h-6 sm:w-8 sm:h-8 text-gray-900" />
               </div>
             </div>
             <div class="flex-1 text-left">
@@ -154,17 +154,17 @@
                 Gérer et signer plusieurs utilisateurs à la fois
               </p>
               <div
-                class="mt-3 flex items-center gap-2 text-xs sm:text-sm text-purple-400"
+                class="mt-3 flex items-center gap-2 text-xs sm:text-sm text-red-500"
               >
                 <div
-                  class="w-2 h-2 bg-purple-400 rounded-full animate-pulse"
+                  class="w-2 h-2 bg-red-500 rounded-full animate-pulse"
                 ></div>
                 <span>Gestion avancée des signatures</span>
               </div>
             </div>
             <div class="flex-shrink-0">
               <svg
-                class="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 group-hover:text-purple-400 group-hover:translate-x-1 transition-all duration-200 ease-out"
+                class="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 group-hover:text-red-500 group-hover:translate-x-1 transition-all duration-200 ease-out"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -194,9 +194,9 @@
         <div class="flex items-center justify-center gap-3">
           <div class="flex-shrink-0">
             <div
-              class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-200 ease-out"
+              class="w-10 h-10 rounded-xl bg-white flex items-center justify-center group-hover:scale-110 transition-transform duration-200 ease-out"
             >
-              <MapPin class="w-5 h-5 text-white" />
+              <MapPin class="w-5 h-5 text-gray-900" />
             </div>
           </div>
           <div class="flex-1 text-left">
@@ -209,7 +209,7 @@
           </div>
           <div class="flex-shrink-0">
             <svg
-              class="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 group-hover:text-indigo-400 group-hover:translate-x-1 transition-all duration-200 ease-out"
+              class="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 group-hover:text-red-500 group-hover:translate-x-1 transition-all duration-200 ease-out"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

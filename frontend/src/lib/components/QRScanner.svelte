@@ -365,7 +365,7 @@
     {#if isChecking}
       <div class="text-center">
         <div
-          class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mb-4"
+          class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mb-4"
         ></div>
         <p class="text-gray-400">Vérification des permissions...</p>
       </div>
@@ -385,15 +385,15 @@
               </p>
               <ol class="space-y-2 text-gray-300">
                 <li class="flex gap-2">
-                  <span class="text-purple-400">1.</span>
+                  <span class="text-red-500">1.</span>
                   <span>Ouvrez l'app <strong>Réglages</strong> (icône ⚙️)</span>
                 </li>
                 <li class="flex gap-2">
-                  <span class="text-purple-400">2.</span>
+                  <span class="text-red-500">2.</span>
                   <span>Descendez et tapez sur <strong>Safari</strong></span>
                 </li>
                 <li class="flex gap-2">
-                  <span class="text-purple-400">3.</span>
+                  <span class="text-red-500">3.</span>
                   <span
                     >Dans "Réglages pour les sites web", tapez <strong
                       >Caméra</strong
@@ -401,11 +401,11 @@
                   >
                 </li>
                 <li class="flex gap-2">
-                  <span class="text-purple-400">4.</span>
+                  <span class="text-red-500">4.</span>
                   <span>Sélectionnez <strong>Autoriser</strong></span>
                 </li>
                 <li class="flex gap-2">
-                  <span class="text-purple-400">5.</span>
+                  <span class="text-red-500">5.</span>
                   <span>Revenez ici et tapez <strong>Réessayer</strong></span>
                 </li>
               </ol>

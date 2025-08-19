@@ -143,7 +143,7 @@
       <div class="glass-effect-card rounded-xl p-4 sm:p-6">
         <div class="flex items-center gap-3 mb-4">
           <div
-            class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-lg font-bold"
+            class="w-10 h-10 rounded-xl bg-white text-gray-900 flex items-center justify-center text-lg font-bold"
           >
             {$currentUser?.username?.charAt(0).toUpperCase() || "?"}
           </div>
@@ -187,19 +187,19 @@
         <div class="flex flex-col items-center gap-4">
           <div class="relative">
             <div
-              class="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center group-hover:scale-110 group-disabled:hover:scale-100 transition-transform duration-200 ease-out"
+              class="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white flex items-center justify-center group-hover:scale-110 group-disabled:hover:scale-100 transition-transform duration-200 ease-out"
             >
               {#if signing}
                 <span
-                  class="inline-block animate-spin rounded-full h-8 w-8 sm:h-10 sm:w-10 border-b-2 border-white"
+                  class="inline-block animate-spin rounded-full h-8 w-8 sm:h-10 sm:w-10 border-b-2 border-black"
                 ></span>
               {:else}
-                <ScanQrCode class="w-10 h-10 sm:w-12 sm:h-12 text-white" />
+                <ScanQrCode class="w-10 h-10 sm:w-12 sm:h-12 text-gray-900" />
               {/if}
             </div>
             {#if canSign && !signing}
               <div
-                class="absolute -inset-2 rounded-3xl border-2 border-green-400/30 animate-pulse"
+                class="absolute -inset-2 rounded-3xl border-2 border-red-600/30 animate-pulse"
               ></div>
             {/if}
           </div>
@@ -243,21 +243,21 @@
           <ol class="space-y-2 text-sm text-gray-300">
             <li class="flex gap-3">
               <span
-                class="flex-shrink-0 w-6 h-6 bg-purple-500/20 text-purple-400 rounded-full flex items-center justify-center text-xs font-bold"
+                class="flex-shrink-0 w-6 h-6 bg-red-600/10 text-red-500 rounded-full flex items-center justify-center text-xs font-bold"
                 >1</span
               >
               <span>Appuyez sur "Scanner QR Code"</span>
             </li>
             <li class="flex gap-3">
               <span
-                class="flex-shrink-0 w-6 h-6 bg-purple-500/20 text-purple-400 rounded-full flex items-center justify-center text-xs font-bold"
+                class="flex-shrink-0 w-6 h-6 bg-red-600/10 text-red-500 rounded-full flex items-center justify-center text-xs font-bold"
                 >2</span
               >
               <span>Scannez le QR code sur l'intranet Epitech</span>
             </li>
             <li class="flex gap-3">
               <span
-                class="flex-shrink-0 w-6 h-6 bg-purple-500/20 text-purple-400 rounded-full flex items-center justify-center text-xs font-bold"
+                class="flex-shrink-0 w-6 h-6 bg-red-600/10 text-red-500 rounded-full flex items-center justify-center text-xs font-bold"
                 >3</span
               >
               <span>Votre signature sera effectuée automatiquement</span>

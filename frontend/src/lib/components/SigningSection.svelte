@@ -67,7 +67,7 @@
     >
       <div class="flex items-center justify-between text-sm">
         <span class="text-gray-400">Utilisateurs sélectionnés</span>
-        <span class="font-semibold text-purple-400">{selectedUsers.size}</span>
+        <span class="font-semibold text-red-500">{selectedUsers.size}</span>
       </div>
     </div>
 
