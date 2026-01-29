@@ -47,7 +47,7 @@
 
   function handleUpdateProfile() {
     closeMenu();
-    dispatch("updateProfile");
+    goto("/profile");
   }
 
   function getJWTStatusConfig() {

@@ -35,6 +35,10 @@
   function goToRoadmap() {
     goto("/roadmap");
   }
+
+  function goToEdsquare() {
+    goto("/edsquare");
+  }
 </script>
 
 <div class="min-h-screen pb-safe">
@@ -45,7 +49,7 @@
       in:fly={{ y: -30, duration: 600, easing: quintOut }}
     >
       <h1 class="text-3xl sm:text-4xl font-bold gradient-text mb-4">
-        Bienvenue, {$currentUser?.username || "Utilisateur"} !
+        Bienvenue{#if $currentUser}, {$currentUser.username}{/if} !
       </h1>
       <p class="text-gray-400 text-base sm:text-lg">
         Choisissez votre mode de signature
@@ -160,6 +164,64 @@
                   class="w-2 h-2 bg-red-500 rounded-full animate-pulse"
                 ></div>
                 <span>Gestion avancée des signatures</span>
+              </div>
+            </div>
+            <div class="flex-shrink-0">
+              <svg
+                class="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 group-hover:text-red-500 group-hover:translate-x-1 transition-all duration-200 ease-out"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </div>
+          </div>
+        </button>
+      </div>
+
+      <!-- Validation EDSquare -->
+      <div
+        in:scale={{
+          duration: 500,
+          delay: 500,
+          easing: quintOut,
+          start: 0.9,
+        }}
+      >
+        <button
+          on:click={goToEdsquare}
+          class="w-full glass-effect-card rounded-2xl p-6 sm:p-8 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 ease-out group"
+        >
+          <div class="flex items-center gap-4 sm:gap-6">
+            <div class="flex-shrink-0">
+              <div
+                class="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white flex items-center justify-center group-hover:scale-110 transition-transform duration-200 ease-out"
+              >
+                <svg class="w-6 h-6 sm:w-8 sm:h-8 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <div class="flex-1 text-left">
+              <h3 class="text-lg sm:text-xl font-bold text-white mb-2">
+                Validation EDSquare
+              </h3>
+              <p class="text-sm sm:text-base text-gray-400 leading-relaxed">
+                Valider un code EDSquare avec votre signature manuscrite
+              </p>
+              <div
+                class="mt-3 flex items-center gap-2 text-xs sm:text-sm text-red-500"
+              >
+                <div
+                  class="w-2 h-2 bg-red-500 rounded-full animate-pulse"
+                ></div>
+                <span>Validation automatique</span>
               </div>
             </div>
             <div class="flex-shrink-0">

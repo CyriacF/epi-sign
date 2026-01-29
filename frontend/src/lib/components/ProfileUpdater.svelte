@@ -1,10 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { currentUser } from "$lib/stores";
-  import { updateUserProfile } from "$lib/api";
+  import { updateUserProfile, saveSignature } from "$lib/api";
   import type { ApiError } from "$lib/types";
   import { fly, fade, scale } from "svelte/transition";
   import { quintOut } from "svelte/easing";
+  import SignatureCanvas from "./SignatureCanvas.svelte";
 
   export let isOpen: boolean = false;
 
@@ -18,6 +19,8 @@
   let error: string = "";
   let success: boolean = false;
   let showPasswords: boolean = false;
+  let showSignatureCanvas: boolean = false;
+  let signatureImage: string | null = null;
 
   // Reset form when opening
   $: if (isOpen) {
@@ -28,6 +31,7 @@
     error = "";
     success = false;
     showPasswords = false;
+    signatureImage = $currentUser?.signatureManuscrite || null;
   }
 
   async function handleSubmit() {
@@ -121,6 +125,27 @@
 
   function togglePasswordVisibility() {
     showPasswords = !showPasswords;
+  }
+
+  async function handleSignatureSave(event: CustomEvent<string>) {
+    const signatureDataUrl = event.detail;
+    signatureImage = signatureDataUrl;
+    showSignatureCanvas = false;
+    
+    try {
+      await saveSignature(signatureDataUrl);
+      success = true;
+      setTimeout(() => {
+        handleClose();
+      }, 2000);
+    } catch (e) {
+      const apiError = e as ApiError;
+      error = "Erreur lors de l'enregistrement de la signature";
+    }
+  }
+
+  function openSignatureCanvas() {
+    showSignatureCanvas = true;
   }
 
   // Fermer avec Escape
@@ -365,6 +390,49 @@
           </div>
         </div>
 
+        <!-- Signature manuscrite -->
+        <div class="space-y-4">
+          <div
+            class="flex items-center justify-between"
+            in:fade={{ delay: 500, duration: 200 }}
+          >
+            <h3 class="text-sm font-medium text-gray-300">
+              Signature manuscrite (pour EDSquare)
+            </h3>
+            <span class="text-xs text-gray-500">(optionnel)</span>
+          </div>
+
+          {#if signatureImage}
+            <div
+              class="bg-white/5 rounded-lg p-4 border border-white/10 overflow-hidden"
+              in:fly={{ x: -20, duration: 300, delay: 550, easing: quintOut }}
+            >
+              <p class="text-xs text-gray-400 mb-2">Signature actuelle :</p>
+              <div class="flex justify-center items-center max-h-[120px] overflow-hidden">
+                <img
+                  src={signatureImage}
+                  alt="Signature"
+                  class="max-w-[250px] max-h-[100px] w-auto h-auto rounded border border-white/20 object-contain"
+                />
+              </div>
+            </div>
+          {/if}
+
+          <div
+            class="transform transition-all duration-200 ease-out hover:scale-[1.02]"
+            in:fly={{ x: 20, duration: 300, delay: 600, easing: quintOut }}
+          >
+            <button
+              type="button"
+              on:click={openSignatureCanvas}
+              disabled={loading || success}
+              class="btn-secondary w-full transform transition-all duration-200 ease-out hover:scale-105 active:scale-95"
+            >
+              {signatureImage ? "Modifier la signature" : "Créer une signature"}
+            </button>
+          </div>
+        </div>
+
         <!-- Actions -->
         <div
           class="flex gap-3"
@@ -401,3 +469,11 @@
     </div>
   </div>
 {/if}
+
+<!-- Signature Canvas Modal -->
+<SignatureCanvas
+  isOpen={showSignatureCanvas}
+  currentSignature={signatureImage}
+  on:save={handleSignatureSave}
+  on:close={() => (showSignatureCanvas = false)}
+/>

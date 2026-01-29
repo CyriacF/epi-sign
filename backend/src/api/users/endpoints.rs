@@ -3,14 +3,15 @@ use base64::{Engine as _, engine::general_purpose};
 use chrono::DateTime;
 use http::StatusCode;
 use serde_json::Value;
+use tracing::{debug, info, error};
 
 use crate::{
     api::{
         auth::{JwtClaims, hash_password},
         users::{
             User, get_user_by_id, get_user_by_username,
-            models::{JwtPayload, PublicUserResponse, UpdateUserPayload},
-            services::{get_all_users, update_user_jwt},
+            models::{JwtPayload, PublicUserResponse, UpdateUserPayload, SaveSignaturePayload},
+            services::{get_all_users, update_user_jwt, save_user_signature},
         },
     },
     misc::GlobalState,
@@ -191,5 +192,59 @@ pub async fn update_user(
     match super::services::update_user(&state, &user) {
         Ok(_) => (StatusCode::OK, Json(user)).into_response(),
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Error updating user").into_response(),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/users/me/signature",
+    description = "Save the handwritten signature for the current user",
+    request_body = SaveSignaturePayload,
+    responses(
+        (status = 200, description = "Signature saved successfully"),
+        (status = 400, description = "Invalid signature format"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "User not found"),
+    ),
+    tag = "Users"
+)]
+pub async fn save_signature(
+    State(state): State<GlobalState>,
+    jwt_user: JwtClaims,
+    Json(payload): Json<SaveSignaturePayload>,
+) -> impl IntoResponse {
+    // Valider que c'est une data URL valide
+    if !payload.signature.starts_with("data:image/png;base64,") {
+        return (StatusCode::BAD_REQUEST, "Invalid signature format. Expected PNG base64 data URL").into_response();
+    }
+
+    let mut user = match get_user_by_id(&state, &jwt_user.sub) {
+        Ok(Some(user)) => {
+            debug!("User found for signature save: id={}, username={}", user.id, user.username);
+            user
+        },
+        Ok(None) => {
+            error!("User not found for signature save: id={}", jwt_user.sub);
+            return (StatusCode::NOT_FOUND, "User not found").into_response();
+        },
+        Err(e) => {
+            error!("Error fetching user for signature save: {:?}", e);
+            return (StatusCode::NOT_FOUND, "User not found").into_response();
+        },
+    };
+
+    info!("Saving signature for user {}: {} characters", user.username, payload.signature.len());
+    user.signature_manuscrite = Some(payload.signature.clone());
+
+    match save_user_signature(&state, &user) {
+        Ok(_) => {
+            info!("Signature saved successfully for user {}", user.username);
+            debug!("Returning user with signature: has_signature={}", user.signature_manuscrite.is_some());
+            (StatusCode::OK, Json(user)).into_response()
+        },
+        Err(e) => {
+            error!("Error saving signature for user {}: {:?}", user.username, e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error saving signature").into_response()
+        },
     }
 }

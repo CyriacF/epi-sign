@@ -9,7 +9,15 @@ import type {
     User, 
     JwtPayload,
     UserSignResponse,
-    UpdateUserPayload
+    UpdateUserPayload,
+    SaveSignaturePayload,
+    ValidateEdsquarePayload,
+    ValidateEdsquareResponse,
+    ValidateEdsquareMultiResponse,
+    LoginEdsquarePayload,
+    LoginEdsquareResponse,
+    EdsquareStatusResponse,
+    EdsquareEligibleUsersResponse
 } from './types';
 
 const API_BASE = '/api';
@@ -45,9 +53,28 @@ async function apiCall<T>(
             currentUser.set(null);
         }
         
+        // Essayer de récupérer le message d'erreur du body
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                const errorBody = await response.json() as any;
+                if (errorBody.message || errorBody.error) {
+                    errorMessage = errorBody.message || errorBody.error || errorMessage;
+                }
+            } else {
+                const text = await response.text();
+                if (text && text.trim().length > 0 && text.trim().length < 200) {
+                    errorMessage = text.trim();
+                }
+            }
+        } catch {
+            // Ignorer les erreurs de parsing
+        }
+        
         const error: ApiError = {
             status: response.status,
-            message: `HTTP error! status: ${response.status}`
+            message: errorMessage
         };
         throw error;
     }
@@ -138,10 +165,13 @@ export async function checkAuth(customFetch?: typeof fetch): Promise<boolean> {
             currentUser.set(user);
         }
         return true;
-    } catch {
+    } catch (error) {
+        // S'assurer que l'utilisateur est bien déconnecté en cas d'erreur
         if (browser) {
             isAuthenticated.set(false);
             currentUser.set(null);
+            // Supprimer le cookie d'authentification s'il existe
+            document.cookie = 'auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
         }
         return false;
     }
@@ -154,4 +184,63 @@ export async function updateUserJWT(jwt: string, customFetch?: typeof fetch): Pr
         method: 'POST',
         body: JSON.stringify(payload)
     }, customFetch);
+}
+
+export async function saveSignature(signature: string, customFetch?: typeof fetch): Promise<void> {
+    const payload: SaveSignaturePayload = { signature };
+    
+    const user: User = await apiCall<User>('/users/me/signature', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    }, customFetch);
+
+    if (browser) {
+        currentUser.set(user);
+    }
+}
+
+export async function validateEdsquareCode(code: string, planningEventId: string, customFetch?: typeof fetch): Promise<ValidateEdsquareResponse> {
+    const payload: ValidateEdsquarePayload = { code, planning_event_id: planningEventId };
+    
+    return await apiCall<ValidateEdsquareResponse>('/edsquare/validate', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    }, customFetch);
+}
+
+// Validation EDSquare pour plusieurs utilisateurs en une fois
+export async function validateEdsquareCodeForUsers(
+    code: string,
+    planningEventId: string,
+    userIds: string[],
+    customFetch?: typeof fetch
+): Promise<ValidateEdsquareMultiResponse> {
+    const payload = {
+        code,
+        planning_event_id: planningEventId,
+        user_ids: userIds,
+    };
+
+    return await apiCall<ValidateEdsquareMultiResponse>('/edsquare/validate-multi', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    }, customFetch);
+}
+
+export async function loginEdsquare(email: string, password: string, customFetch?: typeof fetch): Promise<LoginEdsquareResponse> {
+    const payload: LoginEdsquarePayload = { email, password };
+    
+    return await apiCall<LoginEdsquareResponse>('/edsquare/login', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    }, customFetch);
+}
+
+export async function getEdsquareStatus(customFetch?: typeof fetch): Promise<EdsquareStatusResponse> {
+    return await apiCall<EdsquareStatusResponse>('/edsquare/status', {}, customFetch);
+}
+
+// Récupérer la liste des utilisateurs éligibles (signature + cookies EDSquare valides)
+export async function getEdsquareEligibleUsers(customFetch?: typeof fetch): Promise<EdsquareEligibleUsersResponse> {
+    return await apiCall<EdsquareEligibleUsersResponse>('/edsquare/eligible-users', {}, customFetch);
 }

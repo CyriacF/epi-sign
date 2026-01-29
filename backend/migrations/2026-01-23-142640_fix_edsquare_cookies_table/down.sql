@@ -1,0 +1,2 @@
+-- This migration only drops the table, so rollback does nothing
+-- The table will be recreated by subsequent migrations

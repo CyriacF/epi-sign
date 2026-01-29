@@ -8,16 +8,49 @@
 
   export let user: PublicUserResponse;
   export let isSelected: boolean;
+  // Mode d’affichage :
+  // - "jwt" (par défaut) : badge basé sur l’expiration du JWT
+  // - "edsquare" : badge basé sur l’éligibilité EDSquare (propagée par le parent)
+  export let mode: "jwt" | "edsquare" = "jwt";
+  // Pour le mode "edsquare" : indique si l'utilisateur est prêt (signature + cookies)
+  // Si null, on considère l'utilisateur comme cliquable par défaut
+  export let canValidate: boolean | null = null;
 
   const dispatch = createEventDispatcher();
 
-  user.jwtIsExpired =
+  // Calcul local de l’état JWT (sans muter l’objet user)
+  $: jwtIsExpiredComputed =
     user.jwtExpiresAt === undefined ||
     user.jwtExpiresAt === null ||
     new Date(user.jwtExpiresAt) < new Date();
 
+  // Déterminer si la carte est cliquable
+  $: isEnabled =
+    mode === "jwt"
+      ? !jwtIsExpiredComputed
+      : canValidate ?? true;
+
+  // Texte et style du badge en fonction du mode
+  $: badgeText =
+    mode === "jwt"
+      ? jwtIsExpiredComputed
+        ? "JWT expiré"
+        : "JWT valide"
+      : canValidate === false
+        ? "EDSquare non prêt"
+        : "EDSquare prêt";
+
+  $: badgeClasses =
+    mode === "jwt"
+      ? jwtIsExpiredComputed
+        ? "bg-red-500/20 text-red-400 border-red-500/30"
+        : "bg-green-500/20 text-green-400 border-green-500/30"
+      : canValidate === false
+        ? "bg-red-500/20 text-red-400 border-red-500/30"
+        : "bg-green-500/20 text-green-400 border-green-500/30";
+
   function handleToggle() {
-    if (!user.jwtIsExpired) {
+    if (isEnabled) {
       dispatch("toggle", user.id);
     }
   }
@@ -34,7 +67,7 @@
 
 <label
   for="user-{user.id}"
-  class="block glass-effect-card rounded-xl p-4 user-card-subtle {!user.jwtIsExpired
+  class="block glass-effect-card rounded-xl p-4 user-card-subtle {isEnabled
     ? 'cursor-pointer'
     : 'cursor-not-allowed opacity-50'} 
     {isSelected ? 'ring-2 ring-red-600/40 bg-red-600/10' : ''}"
@@ -47,10 +80,10 @@
         id="user-{user.id}"
         checked={isSelected}
         on:change={handleToggle}
-        disabled={user.jwtIsExpired}
+        disabled={!isEnabled}
         class="checkbox-custom"
       />
-      {#if isSelected && !user.jwtIsExpired}
+      {#if isSelected && isEnabled}
         <div
           class="absolute inset-0 rounded border-2 border-red-600 animate-pulse pointer-events-none"
           in:scale={{ duration: 200, easing: quintOut }}
@@ -82,20 +115,20 @@
     <div class="flex-shrink-0">
       <span
         class="inline-block px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 ease-out
-        {user.jwtIsExpired
-          ? 'bg-red-500/20 text-red-400 border-red-500/30'
-          : 'bg-green-500/20 text-green-400 border-green-500/30'}"
+        {badgeClasses}"
         in:scale={{ duration: 200, delay: 100, easing: quintOut }}
       >
         <span class="hidden sm:inline"
-          >{user.jwtIsExpired ? "JWT expiré" : "JWT valide"}</span
+          >{badgeText}</span
         >
         <span class="sm:hidden flex flex-row">
           <Braces size="18" class=" mr-1" />
-          {#if user.jwtIsExpired}<X size="18" />{:else}<Check
-              size="18"
-            />{/if}</span
-        >
+          {#if mode === "jwt" && jwtIsExpiredComputed}
+            <X size="18" />
+          {:else}
+            <Check size="18" />
+          {/if}
+        </span>
       </span>
     </div>
   </div>

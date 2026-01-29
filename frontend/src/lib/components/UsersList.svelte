@@ -9,6 +9,12 @@
   export let users: PublicUserResponse[];
   export let selectedUsers: Set<string>;
   export let loading: boolean;
+  // Mode d’affichage des cartes utilisateurs :
+  // - "jwt" : badge basé sur le JWT (dashboard Epitech)
+  // - "edsquare" : badge EDSquare prêt / non prêt (page EDSquare)
+  export let mode: "jwt" | "edsquare" = "jwt";
+  // Utilisé uniquement en mode "edsquare" : liste des IDs d'utilisateurs prêts EDSquare
+  export let edsquareEligibleIds: string[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -49,6 +55,10 @@
           <UserCard
             user={currentUserData}
             isSelected={selectedUsers.has(currentUserData.id)}
+            mode={mode}
+            canValidate={mode === "edsquare"
+              ? edsquareEligibleIds.includes(currentUserData.id)
+              : null}
             on:toggle={handleUserToggle}
           />
           <!-- Séparateur simple -->
@@ -77,6 +87,10 @@
             <UserCard
               {user}
               isSelected={selectedUsers.has(user.id)}
+              mode={mode}
+              canValidate={mode === "edsquare"
+                ? edsquareEligibleIds.includes(user.id)
+                : null}
               on:toggle={handleUserToggle}
             />
           </div>

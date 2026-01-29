@@ -14,6 +14,7 @@ pub fn get_routes(state: GlobalState) -> Router {
         .route("/me", get(super::endpoints::get_me))
         .route("/me", patch(super::endpoints::update_user))
         .route("/me/update-jwt", post(super::endpoints::update_jwt))
+        .route("/me/signature", post(super::endpoints::save_signature))
         .with_state(state)
 }
 
@@ -173,7 +174,24 @@ pub fn update_user(state: &GlobalState, user: &User) -> Result<(), diesel::resul
             password_hash.eq(&user.password_hash),
             jwt_intra_epitech.eq(&user.jwt_intra_epitech),
             jwt_expires_at.eq(&user.jwt_expires_at),
+            signature_manuscrite.eq(&user.signature_manuscrite),
         ))
+        .execute(&mut conn)?;
+
+    Ok(())
+}
+
+pub fn save_user_signature(state: &GlobalState, user: &User) -> Result<(), diesel::result::Error> {
+    use crate::schema::users::dsl::*;
+    use diesel::prelude::*;
+
+    let mut conn = match state.get_db_conn() {
+        Ok(conn) => conn,
+        Err(_) => return Err(diesel::result::Error::NotFound),
+    };
+
+    diesel::update(users.filter(id.eq(&user.id)))
+        .set(signature_manuscrite.eq(&user.signature_manuscrite))
         .execute(&mut conn)?;
 
     Ok(())

@@ -17,7 +17,7 @@
 
   function handleUpdateJWT() { showJWTUpdater = true; }
   function handleCloseJWTUpdater() { showJWTUpdater = false; }
-  function handleUpdateProfile() { showProfileUpdater = true; }
+  function handleUpdateProfile() { goto("/profile"); }
   function handleCloseProfileUpdater() { showProfileUpdater = false; }
   function handleGoingHome() { goto("/"); }
 
@@ -47,6 +47,7 @@
           <div class="flex items-center gap-6">
             <a href="/" class="hidden sm:inline text-sm tracking-widest uppercase hover:opacity-80">Accueil</a>
             <a href="/dashboard" class="hidden sm:inline text-sm tracking-widest uppercase hover:opacity-80">Dashboard</a>
+            <a href="/edsquare" class="hidden sm:inline text-sm tracking-widest uppercase hover:opacity-80">EDSquare</a>
             <a href="/roadmap" class="hidden sm:inline text-sm tracking-widest uppercase hover:opacity-80">Roadmap</a>
             <ProfileMenu {isMobile} on:updateJWT={handleUpdateJWT} on:updateProfile={handleUpdateProfile} />
           </div>

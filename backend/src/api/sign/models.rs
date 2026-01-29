@@ -17,7 +17,7 @@ pub struct Cookie {
     pub cookie_data: Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct CookieItem {
     pub name: String,
     pub value: String,

@@ -15,10 +15,21 @@ diesel::table! {
         password_hash -> Text,
         jwt_intra_epitech -> Nullable<Text>,
         jwt_expires_at -> Nullable<Timestamp>,
+        signature_manuscrite -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    edsquare_cookies (id) {
+        id -> Text,
+        user_id -> Text,
+        date -> Date,
+        cookie_data -> Jsonb,
     }
 }
 
 diesel::allow_tables_to_appear_in_same_query!(
     cookies,
     users,
+    edsquare_cookies,
 );

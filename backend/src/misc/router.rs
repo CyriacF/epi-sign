@@ -19,6 +19,7 @@ pub fn get_router() -> Router {
     Router::new()
         .nest("/api/sign", crate::api::sign::get_routes(state.clone()))
         .nest("/api/users", crate::api::users::get_routes(state.clone()))
+        .nest("/api/edsquare", crate::api::edsquare::get_routes(state.clone()))
         .layer(from_fn(api::auth::auth_middleware))
         .nest(
             "/api/auth",

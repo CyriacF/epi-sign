@@ -25,6 +25,8 @@ pub struct User {
     )]
     pub jwt_intra_epitech: Option<String>,
     pub jwt_expires_at: Option<chrono::NaiveDateTime>,
+    #[schema(example = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...")]
+    pub signature_manuscrite: Option<String>,
 }
 
 impl User {
@@ -35,6 +37,7 @@ impl User {
             password_hash: hash_password(password.as_str()),
             jwt_intra_epitech: None,
             jwt_expires_at: None,
+            signature_manuscrite: None,
         }
     }
 
@@ -101,3 +104,10 @@ pub struct UpdateUserPayload {
     pub old_password: Option<String>,
     pub new_password: Option<String>,
 }
+
+#[derive(Deserialize, ToSchema, Debug)]
+pub struct SaveSignaturePayload {
+    #[schema(example = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...")]
+    pub signature: String,
+}
+
