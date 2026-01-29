@@ -27,6 +27,12 @@ pub struct ValidateEdsquareMultiPayload {
     pub planning_event_id: String,
     /// Liste des IDs d'utilisateurs à valider
     pub user_ids: Vec<String>,
+    /// Event ID par utilisateur (pour ceux qui ont des cours différents). Clé = user_id, valeur = planning_event_id.
+    #[serde(default)]
+    pub user_planning_event_ids: Option<std::collections::HashMap<String, String>>,
+    /// Code EDSquare par utilisateur (quand les cours diffèrent, le code diffère aussi). Clé = user_id, valeur = code 6 chiffres.
+    #[serde(default)]
+    pub user_codes: Option<std::collections::HashMap<String, String>>,
 }
 
 /// Résultat de validation pour un utilisateur donné
@@ -72,6 +78,7 @@ pub type EdsquareCookieItem = CookieItem;
 pub struct EdsquareStatusResponse {
     pub has_signature: bool,
     pub has_cookies: bool,
+    pub has_saved_credentials: bool,
     pub is_ready: bool,
 }
 
@@ -105,4 +112,25 @@ pub struct EdsquarePlanningEvent {
 #[derive(Serialize, ToSchema)]
 pub struct EdsquarePlanningEventsResponse {
     pub events: Vec<EdsquarePlanningEvent>,
+}
+
+/// Payload pour récupérer les événements du planning de plusieurs utilisateurs
+#[derive(Deserialize, ToSchema, Debug)]
+pub struct PlanningEventsForUsersPayload {
+    pub date: String,
+    pub user_ids: Vec<String>,
+}
+
+/// Événements du planning pour un utilisateur (ou erreur)
+#[derive(Serialize, ToSchema)]
+pub struct UserPlanningEvents {
+    pub user_id: String,
+    pub username: String,
+    pub events: Vec<EdsquarePlanningEvent>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PlanningEventsForUsersResponse {
+    pub user_events: Vec<UserPlanningEvents>,
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { validateEdsquareCodeForUsers, getCurrentUser, loadUsers, getEdsquareStatus, getEdsquareEligibleUsers, getEdsquarePlanningEvents } from "$lib/api";
+  import { validateEdsquareCodeForUsers, getCurrentUser, loadUsers, getEdsquareStatus, getEdsquareEligibleUsers, getEdsquarePlanningEvents, getPlanningEventsForUsers } from "$lib/api";
   import { currentUser } from "$lib/stores";
   import EdsquareResults from "$lib/components/EdsquareResults.svelte";
   import type {
@@ -10,7 +10,8 @@
     EdsquareStatusResponse,
     EdsquareEligibleUsersResponse,
     EdsquareUserValidationResult,
-    EdsquarePlanningEvent
+    EdsquarePlanningEvent,
+    UserPlanningEvents
   } from "$lib/types";
   import AlertMessage from "$lib/components/AlertMessage.svelte";
   import UsersList from "$lib/components/UsersList.svelte";
@@ -40,6 +41,11 @@
   let selectedEventId = "";
   let planningEventIdInput = "";
   let loadingEvents = false;
+  let userEventsList: UserPlanningEvents[] = [];
+  let userEventOverrides: Record<string, string> = {};
+  let userCodeOverrides: Record<string, string> = {};
+  /** Un code par event id quand les cours diffèrent (même event = même code, partagé par plusieurs users) */
+  let codeByEventId: Record<string, string> = {};
   let eligibleUserIds: string[] = [];
   let showResultsModal = false;
   let edsquareResults: EdsquareUserValidationResult[] = [];
@@ -69,29 +75,108 @@
     }
   });
 
+  $: effectiveUserIds = selectedUsers.size > 0
+    ? Array.from(selectedUsers)
+    : ($currentUser?.id ? [$currentUser.id] : []);
+
   async function loadPlanningEvents() {
-    if (!isReady) return;
+    if (!isReady || !selectedDate) return;
+    if (effectiveUserIds.length === 0) {
+      planningEvents = [];
+      userEventsList = [];
+      selectedEventId = "";
+      userEventOverrides = {};
+      return;
+    }
     loadingEvents = true;
     try {
-      const res = await getEdsquarePlanningEvents(selectedDate);
-      planningEvents = res.events;
-      if (res.events.length === 1) {
-        selectedEventId = String(res.events[0].id);
+      const res = await getPlanningEventsForUsers(selectedDate, effectiveUserIds);
+      userEventsList = res.user_events;
+
+      const okUsers = res.user_events.filter((ue) => !ue.error && ue.events.length > 0);
+      if (okUsers.length === 0) {
+        planningEvents = [];
+        selectedEventId = "";
+        userEventOverrides = {};
+        return;
+      }
+
+      const eventIdsByUser = new Map<string, Set<number>>();
+      for (const ue of okUsers) {
+        const ids = new Set(ue.events.map((e) => e.id));
+        eventIdsByUser.set(ue.user_id, ids);
+      }
+
+      const firstSet = eventIdsByUser.values().next().value;
+      let commonIds = firstSet ? new Set(firstSet) : new Set<number>();
+      for (const ids of eventIdsByUser.values()) {
+        commonIds = new Set([...commonIds].filter((id) => ids.has(id)));
+      }
+
+      if (commonIds.size > 0) {
+        const firstWithEvents = okUsers[0];
+        planningEvents = firstWithEvents.events.filter((e) => commonIds.has(e.id));
+        selectedEventId = planningEvents.length === 1 ? String(planningEvents[0].id) : planningEvents.length > 0 ? String(planningEvents[0].id) : "";
+        userEventOverrides = {};
       } else {
-        selectedEventId = res.events.length > 0 ? String(res.events[0].id) : "";
+        planningEvents = [];
+        selectedEventId = "";
+        if (okUsers.length === 1) {
+          planningEvents = okUsers[0].events;
+          selectedEventId = planningEvents.length === 1 ? String(planningEvents[0].id) : planningEvents.length > 0 ? String(planningEvents[0].id) : "";
+          userEventOverrides = {};
+        } else {
+          userEventOverrides = {};
+          codeByEventId = {};
+          for (const ue of okUsers) {
+            if (ue.events.length > 0) {
+              userEventOverrides[ue.user_id] = String(ue.events[0].id);
+            }
+          }
+        }
       }
     } catch (e) {
       console.error("Erreur chargement planning EDSquare:", e);
       planningEvents = [];
+      userEventsList = [];
       selectedEventId = "";
+      userEventOverrides = {};
+      codeByEventId = {};
     } finally {
       loadingEvents = false;
     }
   }
 
-  $: if (browser && isReady && selectedDate) {
+  $: if (browser && isReady && selectedDate && effectiveUserIds) {
     loadPlanningEvents();
   }
+
+  $: hasCommonEvents = planningEvents.length > 0 && Object.keys(userEventOverrides).length === 0;
+  $: usersNeedingPerUserEvent = userEventsList.filter((ue) => !ue.error && ue.events.length > 0);
+  $: needPerUserDropdowns = planningEvents.length === 0 && usersNeedingPerUserEvent.length > 1;
+
+  /** Groupes (event id → utilisateurs) pour afficher un seul champ code par cours. Ordre = ordre des utilisateurs en haut (premier cours affiché = premier bloc code). */
+  $: eventGroups = (() => {
+    if (!needPerUserDropdowns) return [];
+    const byEvent: Record<string, { eventId: string; eventLabel: string; userIds: string[]; usernames: string[] }> = {};
+    for (const ue of usersNeedingPerUserEvent) {
+      const eventId = userEventOverrides[ue.user_id];
+      if (!eventId) continue;
+      const evt = ue.events.find((e) => String(e.id) === eventId);
+      const eventLabel = evt ? `${evt.title} — ${evt.start.slice(0, 16).replace("T", " ")} → ${evt.end.slice(11, 16)}` : eventId;
+      if (!byEvent[eventId]) {
+        byEvent[eventId] = { eventId, eventLabel, userIds: [], usernames: [] };
+      }
+      byEvent[eventId].userIds.push(ue.user_id);
+      byEvent[eventId].usernames.push(ue.username);
+    }
+    const order: string[] = [];
+    for (const ue of usersNeedingPerUserEvent) {
+      const eventId = userEventOverrides[ue.user_id];
+      if (eventId && !order.includes(eventId)) order.push(eventId);
+    }
+    return order.map((id) => byEvent[id]).filter(Boolean);
+  })();
 
   function handleUserToggle(event: CustomEvent<string>) {
     const userId = event.detail;
@@ -115,28 +200,62 @@
 
   const MANUAL_EVENT_ID = "__manual__";
   $: useManualEventId = selectedEventId === MANUAL_EVENT_ID;
-  $: effectivePlanningEventId = useManualEventId ? planningEventIdInput.trim() : selectedEventId;
+  $: mainPlanningEventId = useManualEventId ? planningEventIdInput.trim() : selectedEventId;
+  $: effectivePlanningEventId = needPerUserDropdowns
+    ? (usersToValidateForCheck.length > 0 && usersToValidateForCheck.every((id) => userEventOverrides[id]))
+      ? mainPlanningEventId || userEventOverrides[usersToValidateForCheck[0]]
+      : ""
+    : mainPlanningEventId;
+
+  $: usersToValidateForCheck = selectedUsers.size > 0 ? Array.from(selectedUsers) : ($currentUser?.id ? [$currentUser.id] : []);
 
   async function validateCode() {
-    if (!codeInput.trim()) {
+    // En mode "cours différents", les codes sont dans codeByEventId, pas dans codeInput
+    if (!needPerUserDropdowns && !codeInput.trim()) {
       error = "Veuillez entrer un code EDSquare";
       return;
     }
 
-    if (!effectivePlanningEventId) {
-      error = useManualEventId
-        ? "Veuillez entrer un planning_event_id ou choisir un événement dans la liste"
-        : "Veuillez choisir une date et un événement (ou saisir l'ID manuellement)";
-      return;
-    }
-
-    // Si aucun utilisateur sélectionné, utiliser l'utilisateur actuel
     const usersToValidate = selectedUsers.size > 0 
       ? Array.from(selectedUsers)
       : [$currentUser?.id].filter(Boolean) as string[];
 
     if (usersToValidate.length === 0) {
       error = "Aucun utilisateur sélectionné";
+      return;
+    }
+
+    const eventIdForValidation = needPerUserDropdowns
+      ? Object.keys(userEventOverrides).length > 0
+        ? userEventOverrides[usersToValidate[0]] ?? ""
+        : ""
+      : mainPlanningEventId;
+    const overridesForApi = needPerUserDropdowns ? userEventOverrides : undefined;
+    // En mode cours différents : un code par user (issu du code par event id), toujours envoyer tous les users
+    const codesForApi = needPerUserDropdowns
+      ? (() => {
+          const map: Record<string, string> = {};
+          for (const userId of usersToValidate) {
+            const eventId = userEventOverrides[userId];
+            const code = eventId ? (codeByEventId[eventId] ?? "").trim() : "";
+            map[userId] = code;
+          }
+          return map;
+        })()
+      : undefined;
+
+    if (!eventIdForValidation && !needPerUserDropdowns) {
+      error = useManualEventId
+        ? "Veuillez entrer un planning_event_id ou choisir un événement dans la liste"
+        : "Veuillez choisir une date et un événement (ou saisir l'ID manuellement)";
+      return;
+    }
+    if (needPerUserDropdowns && usersToValidate.some((id) => !userEventOverrides[id])) {
+      error = "Veuillez choisir un cours pour chaque personne (cours différents)";
+      return;
+    }
+    if (needPerUserDropdowns && eventGroups.some((grp) => (codeByEventId[grp.eventId] ?? "").trim().length !== 6)) {
+      error = "Chaque cours doit avoir un code EDSquare de 6 chiffres (un code par event id)";
       return;
     }
 
@@ -154,8 +273,10 @@
     try {
       const response = await validateEdsquareCodeForUsers(
         codeInput.trim(),
-        effectivePlanningEventId,
-        usersToValidate
+        eventIdForValidation,
+        usersToValidate,
+        overridesForApi,
+        codesForApi
       );
 
       // Stocker les résultats détaillés pour la modale
@@ -193,6 +314,9 @@
         codeInput = "";
         if (!useManualEventId) selectedEventId = "";
         else planningEventIdInput = "";
+        userEventOverrides = {};
+        userCodeOverrides = {};
+        codeByEventId = {};
         selectedUsers = new Set();
       } else {
         error = validationResult.message || "Erreur lors de la validation";
@@ -206,11 +330,11 @@
           error = "Signature non trouvée. Veuillez créer une signature dans votre profil.";
         }
       } else if (apiError.status === 400) {
-        error = "Code invalide ou planning_event_id manquant";
+        error = apiError.message || "Code invalide ou planning_event_id manquant";
       } else if (apiError.status === 401) {
         error = "Non autorisé - Vérifiez votre connexion";
       } else {
-        error = "Erreur lors de la validation du code";
+        error = apiError.message || "Erreur lors de la validation du code";
       }
     } finally {
       validating = false;
@@ -479,15 +603,73 @@
           />
         </div>
         <div>
-          <label for="planningEvent" class="block text-sm font-medium text-gray-300 mb-2">
-            Événement (cours)
-          </label>
           {#if loadingEvents}
+            <label class="block text-sm font-medium text-gray-300 mb-2">Événement (cours)</label>
             <div class="input-field w-full flex items-center gap-2 text-gray-400">
               <span class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-              Chargement des événements…
+              Chargement des cours pour chaque personne…
+            </div>
+          {:else if needPerUserDropdowns}
+            <p class="text-sm font-medium text-yellow-400 mb-2">
+              Les personnes sélectionnées n'ont pas toutes les mêmes cours — choisissez le cours pour chacun, puis un code par cours (même event = même code) :
+            </p>
+            <div class="space-y-4">
+              <!-- Cours : un dropdown par personne -->
+              <div class="space-y-2">
+                {#each usersNeedingPerUserEvent as ue}
+                  <div>
+                    <label for="event-{ue.user_id}" class="block text-xs text-gray-400 mb-1">Cours de {ue.username}</label>
+                    <select
+                      id="event-{ue.user_id}"
+                      value={userEventOverrides[ue.user_id] ?? ""}
+                      on:change={(e) => {
+                        const v = (e.currentTarget as HTMLSelectElement).value;
+                        userEventOverrides = { ...userEventOverrides, [ue.user_id]: v };
+                      }}
+                      disabled={validating || !isReady}
+                      class="input-field w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-red-500/50"
+                    >
+                      <option value="">— Choisir un cours —</option>
+                      {#each ue.events as evt}
+                        <option value={String(evt.id)}>
+                          {evt.title} — {evt.start.slice(0, 16).replace("T", " ")} → {evt.end.slice(11, 16)}
+                        </option>
+                      {/each}
+                    </select>
+                  </div>
+                {/each}
+              </div>
+              <!-- Un code par cours (partagé par tous ceux qui ont ce cours) -->
+              <div class="pt-2 border-t border-white/10">
+                <p class="text-xs text-gray-400 mb-2">Un code par cours — même event id = même code pour tous les utilisateurs de ce cours</p>
+                {#each eventGroups as grp}
+                  <div class="p-3 rounded-lg bg-white/5 border border-white/10 space-y-2 mb-3 last:mb-0">
+                    <div class="text-sm font-medium text-gray-300">{grp.eventLabel}</div>
+                    <div class="text-xs text-gray-400">Pour : {grp.usernames.join(", ")}</div>
+                    <div>
+                      <label for="code-ev-{grp.eventId}" class="block text-xs text-gray-400 mb-1">Code EDSquare (6 chiffres)</label>
+                      <input
+                        type="text"
+                        id="code-ev-{grp.eventId}"
+                        value={codeByEventId[grp.eventId] ?? ""}
+                        on:input={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value.replace(/\D/g, "").slice(0, 6);
+                          codeByEventId = { ...codeByEventId, [grp.eventId]: v };
+                        }}
+                        disabled={validating || !isReady}
+                        placeholder="000000"
+                        maxlength="6"
+                        class="input-field w-full"
+                      />
+                    </div>
+                  </div>
+                {/each}
+              </div>
             </div>
           {:else}
+            <label for="planningEvent" class="block text-sm font-medium text-gray-300 mb-2">
+              Événement (cours)
+            </label>
             <select
               id="planningEvent"
               bind:value={selectedEventId}
@@ -499,7 +681,7 @@
             >
               <option value="">— Choisir un événement —</option>
               {#each planningEvents as evt}
-                <option value={evt.id}>
+                <option value={String(evt.id)}>
                   {evt.title} — {evt.start.slice(0, 16).replace("T", " ")} → {evt.end.slice(11, 16)}
                 </option>
               {/each}
@@ -520,11 +702,15 @@
           {/if}
         </div>
 
-        <!-- Code Input -->
-        <div>
-          <label for="code" class="block text-sm font-medium text-gray-300 mb-2">
-            Code EDSquare
-          </label>
+        <!-- Code Input : un seul champ car le code est lié à l'event id — même cours = même code -->
+        {#if !needPerUserDropdowns}
+          <div>
+            <label for="code" class="block text-sm font-medium text-gray-300 mb-2">
+              Code EDSquare
+            </label>
+            <p class="text-xs text-gray-400 mb-1">
+              Même cours pour tous → un seul code (le code est lié à l'événement choisi).
+            </p>
             <input
               type="text"
               id="code"
@@ -538,12 +724,13 @@
                 }
               }}
             />
-        </div>
+          </div>
+        {/if}
 
         <!-- Validate Button -->
         <button
           on:click={validateCode}
-          disabled={validating || !codeInput.trim() || !effectivePlanningEventId || !isReady}
+          disabled={validating || !isReady || (needPerUserDropdowns ? (usersToValidateForCheck.some((id) => !userEventOverrides[id]) || eventGroups.some((grp) => (codeByEventId[grp.eventId] ?? "").trim().length !== 6)) : (!mainPlanningEventId || !codeInput.trim()))}
           class="btn-primary w-full"
         >
           {#if validating}

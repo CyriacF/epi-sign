@@ -21,8 +21,19 @@ use crate::{
             EdsquareEligibleUser,
             EdsquareEligibleUsersResponse,
             EdsquarePlanningEventsResponse,
+            PlanningEventsForUsersPayload,
+            PlanningEventsForUsersResponse,
+            UserPlanningEvents,
         },
-        edsquare::services::{validate_edsquare_code, save_edsquare_cookies, login_edsquare, get_edsquare_cookies, fetch_planning_events},
+        edsquare::services::{
+            validate_edsquare_code,
+            save_edsquare_cookies,
+            login_edsquare,
+            login_edsquare_with_saved,
+            get_edsquare_cookies,
+            get_edsquare_credentials,
+            fetch_planning_events,
+        },
     },
     misc::GlobalState,
 };
@@ -117,11 +128,18 @@ pub async fn validate_edsquare_multi(
     _jwt_user: JwtClaims,
     Json(payload): Json<ValidateEdsquareMultiPayload>,
 ) -> impl IntoResponse {
-    if payload.code.is_empty() {
+    let use_per_user_codes = payload.user_codes.as_ref().map(|m| !m.is_empty()).unwrap_or(false);
+    info!(
+        "validate-multi: user_ids={}, use_per_user_codes={}, user_codes_keys={}",
+        payload.user_ids.len(),
+        use_per_user_codes,
+        payload.user_codes.as_ref().map(|m| m.len()).unwrap_or(0)
+    );
+    if !use_per_user_codes && payload.code.is_empty() {
         return (StatusCode::BAD_REQUEST, "code is required").into_response();
     }
-    if payload.planning_event_id.is_empty() {
-        return (StatusCode::BAD_REQUEST, "planning_event_id is required").into_response();
+    if payload.planning_event_id.is_empty() && payload.user_planning_event_ids.as_ref().map(|m| m.is_empty()).unwrap_or(true) {
+        return (StatusCode::BAD_REQUEST, "planning_event_id or user_planning_event_ids is required").into_response();
     }
     if payload.user_ids.is_empty() {
         return (StatusCode::BAD_REQUEST, "user_ids must not be empty").into_response();
@@ -185,10 +203,36 @@ pub async fn validate_edsquare_multi(
             }
         };
 
+        // Event ID pour cet utilisateur : override par user_planning_event_ids si présent
+        let planning_event_id = payload
+            .user_planning_event_ids
+            .as_ref()
+            .and_then(|m| m.get(&user.id))
+            .map(|s| s.as_str())
+            .unwrap_or(payload.planning_event_id.as_str());
+
+        // Code pour cet utilisateur : override par user_codes si présent (cours différents = code différent)
+        let code = payload
+            .user_codes
+            .as_ref()
+            .and_then(|m| m.get(&user.id))
+            .map(|s| s.as_str())
+            .unwrap_or(payload.code.as_str());
+
+        if code.len() != 6 {
+            results.push(EdsquareUserValidationResult {
+                user_id: user.id.clone(),
+                username: user.username.clone(),
+                success: false,
+                message: format!("Le code doit contenir 6 chiffres, reçu: {} caractères", code.len()),
+            });
+            continue;
+        }
+
         // Appeler la logique de validation existante pour cet utilisateur
         match validate_edsquare_code(
-            &payload.code,
-            &payload.planning_event_id,
+            code,
+            planning_event_id,
             signature,
             &user.id,
             &state,
@@ -299,6 +343,54 @@ pub async fn login_edsquare_endpoint(
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/edsquare/login-saved",
+    description = "Login to EDSquare using previously saved credentials for the current user",
+    responses(
+        (status = 200, description = "Login successful and cookies saved", body = LoginEdsquareResponse),
+        (status = 400, description = "No saved credentials or invalid credentials"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "EDSquare"
+)]
+pub async fn login_edsquare_with_saved_endpoint(
+    State(state): State<GlobalState>,
+    jwt_user: JwtClaims,
+) -> impl IntoResponse {
+    let user_id_str = jwt_user.sub.to_string();
+
+    match login_edsquare_with_saved(&user_id_str, &state).await {
+        Ok(response) => {
+            info!(
+                "Login EDSquare avec identifiants sauvegardés réussi pour l'utilisateur {}",
+                user_id_str
+            );
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => {
+            error!(
+                "Error logging in to EDSquare with saved credentials for user {}: {}",
+                user_id_str, e
+            );
+            if e.contains("Aucun identifiant EDSquare enregistré") {
+                (StatusCode::BAD_REQUEST, e).into_response()
+            } else if e.contains("identifiants invalides") || e.contains("Échec de la connexion") {
+                (StatusCode::BAD_REQUEST, e).into_response()
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "Erreur lors de la connexion avec identifiants sauvegardés: {}",
+                        e
+                    ),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+#[utoipa::path(
     get,
     path = "/api/edsquare/status",
     description = "Get EDSquare status (signature and cookies)",
@@ -333,7 +425,7 @@ pub async fn get_edsquare_status(
 
     let has_signature = user.signature_manuscrite.is_some();
     info!("Statut signature pour {}: {}", user.username, has_signature);
-    
+
     let has_cookies = match get_edsquare_cookies(&state, &user_id_str) {
         Ok(Some(cookies)) => {
             info!("Cookies EDSquare trouvés pour {}: {} cookies valides", user.username, cookies.len());
@@ -349,10 +441,19 @@ pub async fn get_edsquare_status(
         },
     };
 
+    let has_saved_credentials = get_edsquare_credentials(&state, &user_id_str)
+        .ok()
+        .and_then(|o| o)
+        .is_some();
+    if has_saved_credentials && !has_cookies {
+        info!("Identifiants EDSquare sauvegardés pour {} : reconnexion auto possible", user.username);
+    }
+
     let response = EdsquareStatusResponse {
         has_signature,
         has_cookies,
-        is_ready: has_signature && has_cookies,
+        has_saved_credentials,
+        is_ready: has_signature && (has_cookies || has_saved_credentials),
     };
 
     info!("Statut EDSquare final pour {}: has_signature={}, has_cookies={}, is_ready={}", 
@@ -403,14 +504,7 @@ pub async fn get_edsquare_eligible_users(
                 );
                 true
             }
-            Ok(None) => {
-                debug!(
-                    "No valid EDSquare cookies for user {} ({}), skipping from eligible list",
-                    user.username,
-                    user.id
-                );
-                false
-            }
+            Ok(None) => false,
             Err(e) => {
                 error!(
                     "Error fetching EDSquare cookies for user {} ({}): {}",
@@ -422,7 +516,12 @@ pub async fn get_edsquare_eligible_users(
             }
         };
 
-        if has_cookies {
+        let has_saved_credentials = get_edsquare_credentials(&state, &user_id_str)
+            .ok()
+            .and_then(|o| o)
+            .is_some();
+
+        if has_cookies || has_saved_credentials {
             eligible.push(EdsquareEligibleUser {
                 id: user.id.clone(),
                 username: user.username.clone(),
@@ -484,4 +583,86 @@ pub async fn get_planning_events(
             }
         }
     }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/edsquare/planning-events-for-users",
+    description = "Get planning events for a date for each of the given users (uses each user's EDSquare cookies).",
+    request_body = PlanningEventsForUsersPayload,
+    responses(
+        (status = 200, description = "Events per user", body = PlanningEventsForUsersResponse),
+        (status = 400, description = "Invalid date or empty user_ids"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "EDSquare"
+)]
+pub async fn get_planning_events_for_users(
+    State(state): State<GlobalState>,
+    _jwt_user: JwtClaims,
+    Json(payload): Json<PlanningEventsForUsersPayload>,
+) -> impl IntoResponse {
+    if payload.user_ids.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "user_ids ne doit pas être vide".to_string(),
+        )
+            .into_response();
+    }
+
+    let date = match NaiveDate::parse_from_str(payload.date.as_str(), "%Y-%m-%d") {
+        Ok(d) => d,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Format de date invalide. Utilisez YYYY-MM-DD.".to_string(),
+            )
+                .into_response();
+        }
+    };
+
+    let mut user_events: Vec<UserPlanningEvents> = Vec::new();
+
+    for user_id in &payload.user_ids {
+        let ulid = match Ulid::from_string(user_id) {
+            Ok(id) => id,
+            Err(_) => {
+                user_events.push(UserPlanningEvents {
+                    user_id: user_id.clone(),
+                    username: "<invalid id>".to_string(),
+                    events: vec![],
+                    error: Some("ID utilisateur invalide".to_string()),
+                });
+                continue;
+            }
+        };
+
+        let username = match get_user_by_id(&state, &ulid) {
+            Ok(Some(u)) => u.username.clone(),
+            Ok(None) => "<unknown>".to_string(),
+            Err(_) => "<error>".to_string(),
+        };
+
+        match fetch_planning_events(&state, user_id, date).await {
+            Ok(events) => {
+                user_events.push(UserPlanningEvents {
+                    user_id: user_id.clone(),
+                    username,
+                    events,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                user_events.push(UserPlanningEvents {
+                    user_id: user_id.clone(),
+                    username,
+                    events: vec![],
+                    error: Some(e),
+                });
+            }
+        }
+    }
+
+    let response = PlanningEventsForUsersResponse { user_events };
+    (StatusCode::OK, Json(response)).into_response()
 }

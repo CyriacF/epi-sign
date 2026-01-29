@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { currentUser } from "$lib/stores";
   import { updateUserProfile, saveSignature, loginEdsquare, getCurrentUser, getEdsquareStatus } from "$lib/api";
-  import type { ApiError, LoginEdsquareResponse } from "$lib/types";
+  import type { ApiError, LoginEdsquareResponse, EdsquareStatusResponse } from "$lib/types";
   import { fly, fade, scale } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import { goto } from "$app/navigation";
@@ -28,12 +28,18 @@
   let passwordInput = "";
   let edsquareError = "";
   let edsquareSuccess = "";
+  let edsquareStatus: EdsquareStatusResponse | null = null;
 
-  // Initialize form
-  onMount(() => {
+  // Initialize form + statut EDSquare
+  onMount(async () => {
     if ($currentUser) {
       username = $currentUser.username || "";
       signatureImage = $currentUser.signatureManuscrite || null;
+    }
+    try {
+      edsquareStatus = await getEdsquareStatus();
+    } catch {
+      edsquareStatus = null;
     }
   });
 
@@ -159,6 +165,11 @@
         emailInput = "";
         passwordInput = "";
         showEdsquareLogin = false;
+        try {
+          edsquareStatus = await getEdsquareStatus();
+        } catch {
+          edsquareStatus = null;
+        }
       } else {
         edsquareError = response.message || "Erreur lors de la connexion";
       }
@@ -393,6 +404,27 @@
         >
           <h2 class="text-xl font-semibold gradient-text mb-6">Connexion EDSquare</h2>
 
+          {#if edsquareStatus !== null}
+            <div
+              class="mb-4 p-3 rounded-lg flex items-center gap-3 {edsquareStatus.has_saved_credentials
+                ? 'bg-green-500/10 border border-green-500/30 text-green-300'
+                : 'bg-gray-500/10 border border-gray-500/30 text-gray-400'}"
+            >
+              {#if edsquareStatus.has_saved_credentials}
+                <svg class="w-5 h-5 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="text-sm font-medium">Identifiants EDSquare enregistrés</span>
+                <span class="text-xs opacity-80">— reconnexion automatique en cas d’expiration</span>
+              {:else}
+                <svg class="w-5 h-5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span class="text-sm">Aucun identifiant enregistré — connectez-vous une fois pour les sauvegarder.</span>
+              {/if}
+            </div>
+          {/if}
+
           {#if edsquareError}
             <div class="mb-4">
               <AlertMessage
@@ -415,7 +447,7 @@
 
           {#if !showEdsquareLogin}
             <p class="text-sm text-gray-400 mb-4">
-              Connectez-vous à EDSquare pour sauvegarder vos cookies de session et valider des codes.
+              Connectez-vous une fois à EDSquare : vos identifiants sont enregistrés. Ensuite, si la session expire, la reconnexion se fera automatiquement lors de la validation d’un code.
             </p>
             <button
               type="button"

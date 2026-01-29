@@ -25,6 +25,101 @@ struct EdsquareCookie {
     cookie_data: Value,
 }
 
+#[derive(diesel::Queryable, diesel::Selectable)]
+#[diesel(table_name = crate::schema::edsquare_credentials)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+struct EdsquareCredential {
+    id: String,
+    user_id: String,
+    email: String,
+    password: String,
+}
+
+/// Sauvegarde ou met à jour les identifiants EDSquare pour un utilisateur.
+pub fn save_edsquare_credentials(
+    state: &GlobalState,
+    user_id_param: &str,
+    email_param: &str,
+    password_param: &str,
+) -> Result<(), String> {
+    use crate::schema::edsquare_credentials::dsl::*;
+    use ulid::Ulid;
+
+    let mut conn = match state.get_db_conn() {
+        Ok(conn) => conn,
+        Err(_) => return Err("Failed to get database connection".into()),
+    };
+
+    let existing = edsquare_credentials
+        .filter(user_id.eq(user_id_param))
+        .select(EdsquareCredential::as_select())
+        .first::<EdsquareCredential>(&mut conn)
+        .optional()
+        .map_err(|e| {
+            error!("Erreur lors de la récupération des identifiants EDSquare: {}", e);
+            format!("Database error when fetching EDSquare credentials: {}", e)
+        })?;
+
+    if let Some(cred) = existing {
+        info!(
+            "Mise à jour des identifiants EDSquare pour l'utilisateur {}",
+            user_id_param
+        );
+        diesel::update(edsquare_credentials.filter(id.eq(cred.id)))
+            .set((email.eq(email_param), password.eq(password_param)))
+            .execute(&mut conn)
+            .map_err(|e| {
+                error!("Erreur lors de la mise à jour des identifiants EDSquare: {}", e);
+                format!("Database error when updating EDSquare credentials: {}", e)
+            })?;
+    } else {
+        let cred_id = Ulid::new().to_string();
+        info!(
+            "Sauvegarde de nouveaux identifiants EDSquare pour l'utilisateur {}",
+            user_id_param
+        );
+        diesel::insert_into(edsquare_credentials)
+            .values((
+                id.eq(cred_id),
+                user_id.eq(user_id_param),
+                email.eq(email_param),
+                password.eq(password_param),
+            ))
+            .execute(&mut conn)
+            .map_err(|e| {
+                error!("Erreur lors de l'insertion des identifiants EDSquare: {}", e);
+                format!("Database error when inserting EDSquare credentials: {}", e)
+            })?;
+    }
+
+    Ok(())
+}
+
+/// Récupère les identifiants EDSquare sauvegardés pour un utilisateur.
+pub fn get_edsquare_credentials(
+    state: &GlobalState,
+    user_id_param: &str,
+) -> Result<Option<(String, String)>, String> {
+    use crate::schema::edsquare_credentials::dsl::*;
+
+    let mut conn = match state.get_db_conn() {
+        Ok(conn) => conn,
+        Err(_) => return Err("Failed to get database connection".into()),
+    };
+
+    let existing = edsquare_credentials
+        .filter(user_id.eq(user_id_param))
+        .select(EdsquareCredential::as_select())
+        .first::<EdsquareCredential>(&mut conn)
+        .optional()
+        .map_err(|e| {
+            error!("Erreur lors de la récupération des identifiants EDSquare: {}", e);
+            format!("Database error when fetching EDSquare credentials: {}", e)
+        })?;
+
+    Ok(existing.map(|cred| (cred.email, cred.password)))
+}
+
 pub fn get_edsquare_cookies(state: &GlobalState, user_id_param: &str) -> Result<Option<Vec<EdsquareCookieItem>>, String> {
     use crate::schema::edsquare_cookies;
     use crate::schema::edsquare_cookies::dsl::*;
@@ -111,6 +206,31 @@ pub fn get_edsquare_cookies(state: &GlobalState, user_id_param: &str) -> Result<
     }
 }
 
+/// Récupère les cookies EDSquare ; si aucun ou expirés, tente une reconnexion automatique avec les identifiants sauvegardés.
+pub async fn get_edsquare_cookies_or_reconnect(
+    state: &GlobalState,
+    user_id_param: &str,
+) -> Result<Vec<EdsquareCookieItem>, String> {
+    match get_edsquare_cookies(state, user_id_param) {
+        Ok(Some(cookies)) => return Ok(cookies),
+        Ok(None) => {
+            info!(
+                "Pas de cookie EDSquare valide pour {}, tentative de reconnexion avec identifiants sauvegardés",
+                user_id_param
+            );
+            if let Err(e) = login_edsquare_with_saved(user_id_param, state).await {
+                return Err(e);
+            }
+            match get_edsquare_cookies(state, user_id_param) {
+                Ok(Some(cookies)) => Ok(cookies),
+                Ok(None) => Err("Reconnexion EDSquare effectuée mais aucun cookie reçu.".into()),
+                Err(e) => Err(e),
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
 pub async fn validate_edsquare_code(
     code: &str,
     planning_event_id: &str,
@@ -118,16 +238,8 @@ pub async fn validate_edsquare_code(
     user_id: &str,
     state: &GlobalState,
 ) -> Result<ValidateEdsquareResponse, String> {
-    // Récupérer les cookies EDSquare
-    let cookies = match get_edsquare_cookies(state, user_id) {
-        Ok(Some(cookies)) => cookies,
-        Ok(None) => {
-            return Err("Aucun cookie EDSquare trouvé pour aujourd'hui. Veuillez vous connecter à EDSquare.".into());
-        }
-        Err(e) => {
-            return Err(format!("Erreur lors de la récupération des cookies: {}", e));
-        }
-    };
+    // Récupérer les cookies EDSquare (reconnexion auto si identifiants sauvegardés)
+    let cookies = get_edsquare_cookies_or_reconnect(state, user_id).await?;
 
     let client = match get_reqwest_client() {
         Ok(client) => client,
@@ -310,21 +422,13 @@ pub async fn validate_edsquare_code(
 }
 
 /// Récupère les événements du planning EDSquare pour une date donnée (json_dashboard).
-/// Utilise les cookies EDSquare de l'utilisateur pour l'authentification.
+/// Utilise les cookies EDSquare de l'utilisateur (reconnexion auto si identifiants sauvegardés).
 pub async fn fetch_planning_events(
     state: &GlobalState,
     user_id_param: &str,
     date: NaiveDate,
 ) -> Result<Vec<EdsquarePlanningEvent>, String> {
-    let cookies = match get_edsquare_cookies(state, user_id_param) {
-        Ok(Some(cookies)) => cookies,
-        Ok(None) => {
-            return Err("Aucun cookie EDSquare trouvé pour aujourd'hui. Veuillez vous connecter à EDSquare.".into());
-        }
-        Err(e) => {
-            return Err(format!("Erreur lors de la récupération des cookies: {}", e));
-        }
-    };
+    let cookies = get_edsquare_cookies_or_reconnect(state, user_id_param).await?;
 
     let cookie_str = cookies
         .iter()
@@ -713,6 +817,10 @@ pub async fn login_edsquare(
     match save_edsquare_cookies(state, user_id_param, &cookie_items) {
         Ok(_) => {
             info!("Cookies EDSquare sauvegardés avec succès pour la date: {}", chrono::Utc::now().date_naive());
+            // Sauvegarder également les identifiants pour permettre des reconnexions automatiques
+            if let Err(e) = save_edsquare_credentials(state, user_id_param, email, password) {
+                warn!("Connexion OK mais échec de la sauvegarde des identifiants EDSquare: {}", e);
+            }
             Ok(LoginEdsquareResponse {
                 success: true,
                 message: "Connexion EDSquare réussie et cookies sauvegardés".to_string(),
@@ -723,6 +831,25 @@ pub async fn login_edsquare(
             Err(format!("Connexion réussie mais erreur lors de la sauvegarde des cookies: {}", e))
         },
     }
+}
+
+/// Relance une connexion EDSquare en utilisant les identifiants sauvegardés en base.
+pub async fn login_edsquare_with_saved(
+    user_id_param: &str,
+    state: &GlobalState,
+) -> Result<LoginEdsquareResponse, String> {
+    let creds = match get_edsquare_credentials(state, user_id_param) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return Err("Aucun identifiant EDSquare enregistré pour cet utilisateur.".into());
+        }
+        Err(e) => {
+            return Err(e);
+        }
+    };
+
+    let (email, password) = creds;
+    login_edsquare(&email, &password, user_id_param, state).await
 }
 
 fn extract_csrf_token_from_html(html: &str) -> Option<String> {

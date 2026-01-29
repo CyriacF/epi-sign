@@ -28,8 +28,18 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    edsquare_credentials (id) {
+        id -> Text,
+        user_id -> Text,
+        email -> Text,
+        password -> Text,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     cookies,
     users,
     edsquare_cookies,
+    edsquare_credentials,
 );

@@ -11,8 +11,10 @@ pub fn get_routes(state: GlobalState) -> Router {
         .route("/validate-multi", axum::routing::post(endpoints::validate_edsquare_multi))
         .route("/cookies", axum::routing::post(endpoints::save_edsquare_cookies_endpoint))
         .route("/login", axum::routing::post(endpoints::login_edsquare_endpoint))
+        .route("/login-saved", axum::routing::post(endpoints::login_edsquare_with_saved_endpoint))
         .route("/status", axum::routing::get(endpoints::get_edsquare_status))
         .route("/eligible-users", axum::routing::get(endpoints::get_edsquare_eligible_users))
         .route("/planning-events", axum::routing::get(endpoints::get_planning_events))
+        .route("/planning-events-for-users", axum::routing::post(endpoints::get_planning_events_for_users))
         .with_state(state)
 }

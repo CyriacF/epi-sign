@@ -99,6 +99,7 @@ export interface LoginEdsquareResponse {
 export interface EdsquareStatusResponse {
     has_signature: boolean;
     has_cookies: boolean;
+    has_saved_credentials: boolean;
     is_ready: boolean;
 }
 
@@ -123,6 +124,17 @@ export interface EdsquarePlanningEvent {
 
 export interface EdsquarePlanningEventsResponse {
     events: EdsquarePlanningEvent[];
+}
+
+export interface UserPlanningEvents {
+    user_id: string;
+    username: string;
+    events: EdsquarePlanningEvent[];
+    error?: string | null;
+}
+
+export interface PlanningEventsForUsersResponse {
+    user_events: UserPlanningEvents[];
 }
 
 export interface DashboardPageData {

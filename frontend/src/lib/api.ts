@@ -18,7 +18,8 @@ import type {
     LoginEdsquareResponse,
     EdsquareStatusResponse,
     EdsquareEligibleUsersResponse,
-    EdsquarePlanningEventsResponse
+    EdsquarePlanningEventsResponse,
+    PlanningEventsForUsersResponse
 } from './types';
 
 const API_BASE = '/api';
@@ -214,17 +215,41 @@ export async function validateEdsquareCodeForUsers(
     code: string,
     planningEventId: string,
     userIds: string[],
+    userPlanningEventIds?: Record<string, string>,
+    userCodes?: Record<string, string>,
     customFetch?: typeof fetch
 ): Promise<ValidateEdsquareMultiResponse> {
-    const payload = {
-        code,
-        planning_event_id: planningEventId,
+    const payload: Record<string, unknown> = {
+        code: String(code ?? ""),
+        planning_event_id: String(planningEventId ?? ""),
         user_ids: userIds,
     };
+    if (userPlanningEventIds && Object.keys(userPlanningEventIds).length > 0) {
+        const idsAsStrings: Record<string, string> = {};
+        for (const [k, v] of Object.entries(userPlanningEventIds)) {
+            idsAsStrings[k] = String(v ?? "");
+        }
+        payload.user_planning_event_ids = idsAsStrings;
+    }
+    if (userCodes && Object.keys(userCodes).length > 0) {
+        payload.user_codes = userCodes;
+    }
 
     return await apiCall<ValidateEdsquareMultiResponse>('/edsquare/validate-multi', {
         method: 'POST',
         body: JSON.stringify(payload)
+    }, customFetch);
+}
+
+// Récupérer les événements du planning pour plusieurs utilisateurs (chacun avec ses cookies EDSquare)
+export async function getPlanningEventsForUsers(
+    date: string,
+    userIds: string[],
+    customFetch?: typeof fetch
+): Promise<PlanningEventsForUsersResponse> {
+    return await apiCall<PlanningEventsForUsersResponse>('/edsquare/planning-events-for-users', {
+        method: 'POST',
+        body: JSON.stringify({ date, user_ids: userIds })
     }, customFetch);
 }
 
@@ -234,6 +259,13 @@ export async function loginEdsquare(email: string, password: string, customFetch
     return await apiCall<LoginEdsquareResponse>('/edsquare/login', {
         method: 'POST',
         body: JSON.stringify(payload)
+    }, customFetch);
+}
+
+// Relancer la connexion EDSquare en utilisant les identifiants déjà sauvegardés
+export async function loginEdsquareWithSaved(customFetch?: typeof fetch): Promise<LoginEdsquareResponse> {
+    return await apiCall<LoginEdsquareResponse>('/edsquare/login-saved', {
+        method: 'POST'
     }, customFetch);
 }
 
