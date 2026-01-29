@@ -111,6 +111,20 @@ export interface EdsquareEligibleUsersResponse {
     users: EdsquareEligibleUser[];
 }
 
+export interface EdsquarePlanningEvent {
+    id: number;
+    title: string;
+    target?: string;
+    start: string;
+    end: string;
+    event_type?: string;
+    registrable?: boolean;
+}
+
+export interface EdsquarePlanningEventsResponse {
+    events: EdsquarePlanningEvent[];
+}
+
 export interface DashboardPageData {
     users: PublicUserResponse[];
     error?: string;

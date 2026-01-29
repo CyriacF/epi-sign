@@ -1,5 +1,8 @@
 use crate::api::{
-    edsquare::models::{ValidateEdsquareResponse, EdsquareCookieItem, LoginEdsquareResponse},
+    edsquare::models::{
+        ValidateEdsquareResponse, EdsquareCookieItem, LoginEdsquareResponse,
+        EdsquarePlanningEvent,
+    },
     sign::CookieItem,
 };
 use crate::misc::GlobalState;
@@ -304,6 +307,82 @@ pub async fn validate_edsquare_code(
                 if response_text.len() > 200 { format!("{}...", &response_text[..200]) } else { response_text }))
         }
     }
+}
+
+/// Récupère les événements du planning EDSquare pour une date donnée (json_dashboard).
+/// Utilise les cookies EDSquare de l'utilisateur pour l'authentification.
+pub async fn fetch_planning_events(
+    state: &GlobalState,
+    user_id_param: &str,
+    date: NaiveDate,
+) -> Result<Vec<EdsquarePlanningEvent>, String> {
+    let cookies = match get_edsquare_cookies(state, user_id_param) {
+        Ok(Some(cookies)) => cookies,
+        Ok(None) => {
+            return Err("Aucun cookie EDSquare trouvé pour aujourd'hui. Veuillez vous connecter à EDSquare.".into());
+        }
+        Err(e) => {
+            return Err(format!("Erreur lors de la récupération des cookies: {}", e));
+        }
+    };
+
+    let cookie_str = cookies
+        .iter()
+        .map(|c| c.to_header_value())
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    let start_str = format!("{}T00:00:00+01:00", date);
+    let end_date = date.succ_opt().unwrap_or(date);
+    let end_str = format!("{}T00:00:00+01:00", end_date);
+
+    let url = format!(
+        "https://app.edsquare.fr/apps/planning/json_dashboard?start={}&end={}",
+        encode(&start_str),
+        encode(&end_str)
+    );
+
+    let client = match get_reqwest_client() {
+        Ok(c) => c,
+        Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
+    };
+
+    let response = client
+        .get(&url)
+        .header(COOKIE, &cookie_str)
+        .header("Accept", "*/*")
+        .header("Accept-Language", "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7")
+        .header("Cache-Control", "no-cache")
+        .header("Referer", "https://app.edsquare.fr/home")
+        .send()
+        .await
+        .map_err(|e| format!("Erreur lors de la requête planning EDSquare: {}", e))?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        if status == StatusCode::UNAUTHORIZED || body.contains("sign_in") {
+            return Err("Session EDSquare expirée. Veuillez vous reconnecter à EDSquare.".into());
+        }
+        return Err(format!(
+            "EDSquare planning a répondu avec le statut {}",
+            status
+        ));
+    }
+
+    let events: Vec<EdsquarePlanningEvent> = serde_json::from_str(&body).map_err(|e| {
+        error!("Erreur parsing JSON planning EDSquare: {}", e);
+        format!("Réponse EDSquare invalide: {}", e)
+    })?;
+
+    info!(
+        "Récupération de {} événement(s) EDSquare pour la date {} (user: {})",
+        events.len(),
+        date,
+        user_id_param
+    );
+    Ok(events)
 }
 
 async fn fetch_csrf_token_with_cookies(

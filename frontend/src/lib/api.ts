@@ -17,7 +17,8 @@ import type {
     LoginEdsquarePayload,
     LoginEdsquareResponse,
     EdsquareStatusResponse,
-    EdsquareEligibleUsersResponse
+    EdsquareEligibleUsersResponse,
+    EdsquarePlanningEventsResponse
 } from './types';
 
 const API_BASE = '/api';
@@ -243,4 +244,13 @@ export async function getEdsquareStatus(customFetch?: typeof fetch): Promise<Eds
 // Récupérer la liste des utilisateurs éligibles (signature + cookies EDSquare valides)
 export async function getEdsquareEligibleUsers(customFetch?: typeof fetch): Promise<EdsquareEligibleUsersResponse> {
     return await apiCall<EdsquareEligibleUsersResponse>('/edsquare/eligible-users', {}, customFetch);
+}
+
+// Récupérer les événements du planning EDSquare pour une date (json_dashboard)
+export async function getEdsquarePlanningEvents(
+    date?: string,
+    customFetch?: typeof fetch
+): Promise<EdsquarePlanningEventsResponse> {
+    const params = date ? `?date=${encodeURIComponent(date)}` : '';
+    return await apiCall<EdsquarePlanningEventsResponse>(`/edsquare/planning-events${params}`, {}, customFetch);
 }

@@ -13,5 +13,6 @@ pub fn get_routes(state: GlobalState) -> Router {
         .route("/login", axum::routing::post(endpoints::login_edsquare_endpoint))
         .route("/status", axum::routing::get(endpoints::get_edsquare_status))
         .route("/eligible-users", axum::routing::get(endpoints::get_edsquare_eligible_users))
+        .route("/planning-events", axum::routing::get(endpoints::get_planning_events))
         .with_state(state)
 }

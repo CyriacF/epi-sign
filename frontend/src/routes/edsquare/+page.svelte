@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { validateEdsquareCodeForUsers, getCurrentUser, loadUsers, getEdsquareStatus, getEdsquareEligibleUsers } from "$lib/api";
+  import { validateEdsquareCodeForUsers, getCurrentUser, loadUsers, getEdsquareStatus, getEdsquareEligibleUsers, getEdsquarePlanningEvents } from "$lib/api";
   import { currentUser } from "$lib/stores";
   import EdsquareResults from "$lib/components/EdsquareResults.svelte";
   import type {
@@ -9,7 +9,8 @@
     EdsquarePageData,
     EdsquareStatusResponse,
     EdsquareEligibleUsersResponse,
-    EdsquareUserValidationResult
+    EdsquareUserValidationResult,
+    EdsquarePlanningEvent
   } from "$lib/types";
   import AlertMessage from "$lib/components/AlertMessage.svelte";
   import UsersList from "$lib/components/UsersList.svelte";
@@ -20,6 +21,11 @@
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
 
+  function todayStr(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
   export let data: EdsquarePageData;
 
   let users: PublicUserResponse[] = data.users || [];
@@ -29,7 +35,11 @@
   let validating = false;
   let validationResult: ValidateEdsquareResponse | null = null;
   let codeInput = "";
+  let selectedDate = todayStr();
+  let planningEvents: EdsquarePlanningEvent[] = [];
+  let selectedEventId = "";
   let planningEventIdInput = "";
+  let loadingEvents = false;
   let eligibleUserIds: string[] = [];
   let showResultsModal = false;
   let edsquareResults: EdsquareUserValidationResult[] = [];
@@ -59,6 +69,30 @@
     }
   });
 
+  async function loadPlanningEvents() {
+    if (!isReady) return;
+    loadingEvents = true;
+    try {
+      const res = await getEdsquarePlanningEvents(selectedDate);
+      planningEvents = res.events;
+      if (res.events.length === 1) {
+        selectedEventId = String(res.events[0].id);
+      } else {
+        selectedEventId = res.events.length > 0 ? String(res.events[0].id) : "";
+      }
+    } catch (e) {
+      console.error("Erreur chargement planning EDSquare:", e);
+      planningEvents = [];
+      selectedEventId = "";
+    } finally {
+      loadingEvents = false;
+    }
+  }
+
+  $: if (browser && isReady && selectedDate) {
+    loadPlanningEvents();
+  }
+
   function handleUserToggle(event: CustomEvent<string>) {
     const userId = event.detail;
     if (selectedUsers.has(userId)) {
@@ -79,14 +113,20 @@
   // mais seuls ceux présents dans eligibleUserIds sont réellement cliquables (canValidate=true)
   $: hasSelectedUsers = selectedUsers.size > 0;
 
+  const MANUAL_EVENT_ID = "__manual__";
+  $: useManualEventId = selectedEventId === MANUAL_EVENT_ID;
+  $: effectivePlanningEventId = useManualEventId ? planningEventIdInput.trim() : selectedEventId;
+
   async function validateCode() {
     if (!codeInput.trim()) {
       error = "Veuillez entrer un code EDSquare";
       return;
     }
 
-    if (!planningEventIdInput.trim()) {
-      error = "Veuillez entrer un planning_event_id";
+    if (!effectivePlanningEventId) {
+      error = useManualEventId
+        ? "Veuillez entrer un planning_event_id ou choisir un événement dans la liste"
+        : "Veuillez choisir une date et un événement (ou saisir l'ID manuellement)";
       return;
     }
 
@@ -114,7 +154,7 @@
     try {
       const response = await validateEdsquareCodeForUsers(
         codeInput.trim(),
-        planningEventIdInput.trim(),
+        effectivePlanningEventId,
         usersToValidate
       );
 
@@ -132,7 +172,7 @@
           success: false,
           message: first.message || "Erreur lors de la validation du code",
           code: codeInput.trim(),
-          planning_event_id: planningEventIdInput.trim(),
+          planning_event_id: effectivePlanningEventId,
         };
         error = validationResult.message;
         return;
@@ -145,13 +185,14 @@
           ? `Code validé avec succès pour ${successCount}/${total} utilisateur(s)`
           : `Certaines validations ont échoué (${successCount}/${total} utilisateur(s) réussies)`,
         code: codeInput.trim(),
-        planning_event_id: planningEventIdInput.trim(),
+        planning_event_id: effectivePlanningEventId,
       };
 
       if (response.globalSuccess || successCount > 0) {
         success = `Code traité pour ${total} utilisateur(s) (succès: ${successCount})`;
         codeInput = "";
-        planningEventIdInput = "";
+        if (!useManualEventId) selectedEventId = "";
+        else planningEventIdInput = "";
         selectedUsers = new Set();
       } else {
         error = validationResult.message || "Erreur lors de la validation";
@@ -415,7 +456,7 @@
             </p>
           {/if}
         </div>
-      {:else if isReady && eligibleUsers.length === 0}
+      {:else if isReady && eligibleUserIds.length === 0}
         <div class="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
           <p class="text-xs text-yellow-400">
             ⚠️ Aucun utilisateur éligible trouvé (signature + connexion EDSquare valide). Le code sera validé uniquement pour votre compte.
@@ -424,24 +465,59 @@
       {/if}
 
       <div class="space-y-4">
-        <!-- Planning Event ID Input -->
+        <!-- Date + Événement du planning -->
         <div>
-          <label for="planningEventId" class="block text-sm font-medium text-gray-300 mb-2">
-            Planning Event ID
+          <label for="planningDate" class="block text-sm font-medium text-gray-300 mb-2">
+            Date du cours
           </label>
           <input
-            type="text"
-            id="planningEventId"
-            bind:value={planningEventIdInput}
-            disabled={validating || !isReady}
-            placeholder="199289"
+            type="date"
+            id="planningDate"
+            bind:value={selectedDate}
+            disabled={validating || !isReady || loadingEvents}
             class="input-field w-full"
-            on:keydown={(e) => {
-              if (e.key === "Enter" && !validating && isReady) {
-                validateCode();
-              }
-            }}
           />
+        </div>
+        <div>
+          <label for="planningEvent" class="block text-sm font-medium text-gray-300 mb-2">
+            Événement (cours)
+          </label>
+          {#if loadingEvents}
+            <div class="input-field w-full flex items-center gap-2 text-gray-400">
+              <span class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+              Chargement des événements…
+            </div>
+          {:else}
+            <select
+              id="planningEvent"
+              bind:value={selectedEventId}
+              disabled={validating || !isReady}
+              class="input-field w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-red-500/50"
+              on:change={() => {
+                if (selectedEventId === MANUAL_EVENT_ID) planningEventIdInput = "";
+              }}
+            >
+              <option value="">— Choisir un événement —</option>
+              {#each planningEvents as evt}
+                <option value={evt.id}>
+                  {evt.title} — {evt.start.slice(0, 16).replace("T", " ")} → {evt.end.slice(11, 16)}
+                </option>
+              {/each}
+              <option value={MANUAL_EVENT_ID}>Saisir l'ID manuellement</option>
+            </select>
+            {#if useManualEventId}
+              <input
+                type="text"
+                bind:value={planningEventIdInput}
+                disabled={validating || !isReady}
+                placeholder="ex. 199289"
+                class="input-field w-full mt-2"
+                on:keydown={(e) => {
+                  if (e.key === "Enter" && !validating && isReady) validateCode();
+                }}
+              />
+            {/if}
+          {/if}
         </div>
 
         <!-- Code Input -->
@@ -467,7 +543,7 @@
         <!-- Validate Button -->
         <button
           on:click={validateCode}
-            disabled={validating || !codeInput.trim() || !planningEventIdInput.trim() || !isReady}
+          disabled={validating || !codeInput.trim() || !effectivePlanningEventId || !isReady}
           class="btn-primary w-full"
         >
           {#if validating}
@@ -480,7 +556,7 @@
         </button>
       </div>
 
-      <!-- Result -->
+      <!-- Result (résumé inline) -->
       {#if validationResult}
         <div
           class="mt-6 p-4 rounded-xl border {validationResult.success
@@ -507,17 +583,18 @@
                   Code validé : {validationResult.code}
                 </p>
               {/if}
-    </div>
-  </div>
-
-  <EdsquareResults
-    isOpen={showResultsModal}
-    results={edsquareResults}
-    on:close={() => (showResultsModal = false)}
-  />
-</div>
+            </div>
+          </div>
+        </div>
       {/if}
     </div>
+
+    <!-- Modale des résultats détaillés (toujours dans le DOM, visibilité via isOpen) -->
+    <EdsquareResults
+      isOpen={showResultsModal}
+      results={edsquareResults}
+      on:close={() => (showResultsModal = false)}
+    />
 
     <!-- Instructions -->
     {#if isReady}
@@ -542,7 +619,7 @@
                 class="flex-shrink-0 w-6 h-6 bg-red-600/10 text-red-500 rounded-full flex items-center justify-center text-xs font-bold"
                 >2</span
               >
-              <span>Entrez le Planning Event ID et le code EDSquare</span>
+              <span>Choisissez la date et l'événement (cours), puis entrez le code EDSquare</span>
             </li>
             <li class="flex gap-3">
               <span

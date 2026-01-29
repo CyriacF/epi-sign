@@ -1,7 +1,8 @@
-use axum::{Json, extract::State, response::IntoResponse};
+use axum::{Json, extract::{State, Query}, response::IntoResponse};
 use http::StatusCode;
 use tracing::{error, debug, info, warn};
 use ulid::Ulid;
+use chrono::NaiveDate;
 
 use crate::{
     api::{
@@ -19,11 +20,17 @@ use crate::{
             EdsquareStatusResponse,
             EdsquareEligibleUser,
             EdsquareEligibleUsersResponse,
+            EdsquarePlanningEventsResponse,
         },
-        edsquare::services::{validate_edsquare_code, save_edsquare_cookies, login_edsquare, get_edsquare_cookies},
+        edsquare::services::{validate_edsquare_code, save_edsquare_cookies, login_edsquare, get_edsquare_cookies, fetch_planning_events},
     },
     misc::GlobalState,
 };
+
+#[derive(serde::Deserialize)]
+pub struct PlanningEventsQuery {
+    pub date: Option<String>,
+}
 
 #[utoipa::path(
     post,
@@ -428,4 +435,53 @@ pub async fn get_edsquare_eligible_users(
 
     let response = EdsquareEligibleUsersResponse { users: eligible };
     (StatusCode::OK, Json(response)).into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/edsquare/planning-events",
+    description = "Get planning events for a date from EDSquare (json_dashboard). Uses current user's EDSquare cookies.",
+    params(
+        ("date" = Option<String>, Query, description = "Date YYYY-MM-DD (default: today)")
+    ),
+    responses(
+        (status = 200, description = "Events retrieved successfully", body = EdsquarePlanningEventsResponse),
+        (status = 400, description = "Invalid date format"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "No EDSquare cookies"),
+    ),
+    tag = "EDSquare"
+)]
+pub async fn get_planning_events(
+    State(state): State<GlobalState>,
+    jwt_user: JwtClaims,
+    Query(query): Query<PlanningEventsQuery>,
+) -> impl IntoResponse {
+    let date = match &query.date {
+        Some(d) => match NaiveDate::parse_from_str(d, "%Y-%m-%d") {
+            Ok(date) => date,
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    "Format de date invalide. Utilisez YYYY-MM-DD.",
+                )
+                    .into_response()
+            }
+        },
+        None => chrono::Utc::now().date_naive(),
+    };
+
+    match fetch_planning_events(&state, &jwt_user.sub.to_string(), date).await {
+        Ok(events) => {
+            let response = EdsquarePlanningEventsResponse { events };
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => {
+            if e.contains("cookie") || e.contains("Session EDSquare expirée") {
+                (StatusCode::NOT_FOUND, e).into_response()
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, e).into_response()
+            }
+        }
+    }
 }
