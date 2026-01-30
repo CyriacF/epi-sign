@@ -13,6 +13,9 @@ use utoipa::OpenApi;
         users::endpoints::get_users,
         users::endpoints::update_jwt,
         users::endpoints::update_user,
+        users::endpoints::save_signature,
+        users::endpoints::get_signatures,
+        users::endpoints::delete_signature,
         sign::endpoints::sign,
         sign::endpoints::status
     ),

@@ -7,7 +7,7 @@ use chrono::NaiveDate;
 use crate::{
     api::{
         auth::JwtClaims,
-        users::{get_user_by_id, get_all_users},
+        users::{get_user_by_id, get_all_users, get_random_signature_for_user, get_user_signatures},
         edsquare::models::{
             ValidateEdsquarePayload,
             ValidateEdsquareResponse,
@@ -62,17 +62,7 @@ pub async fn validate_edsquare(
     Json(payload): Json<ValidateEdsquarePayload>,
 ) -> impl IntoResponse {
     let user = match get_user_by_id(&state, &jwt_user.sub) {
-        Ok(Some(user)) => {
-            debug!("User found: id={}, username={}, has_signature={}", 
-                user.id, 
-                user.username, 
-                user.signature_manuscrite.is_some()
-            );
-            if let Some(ref sig) = user.signature_manuscrite {
-                debug!("Signature length: {} characters", sig.len());
-            }
-            user
-        },
+        Ok(Some(user)) => user,
         Ok(None) => {
             error!("User not found: id={}", jwt_user.sub);
             return (StatusCode::NOT_FOUND, "User not found").into_response();
@@ -83,14 +73,18 @@ pub async fn validate_edsquare(
         },
     };
 
-    let signature = match &user.signature_manuscrite {
-        Some(sig) => {
-            info!("Signature found for user {}: {} characters", user.username, sig.len());
+    let signature = match get_random_signature_for_user(&state, &user.id) {
+        Ok(Some(sig)) => {
+            info!("Signature choisie au hasard pour user {}: {} caractères", user.username, sig.len());
             sig
         },
-        None => {
-            error!("Signature not found for user {} (id: {})", user.username, user.id);
+        Ok(None) => {
+            error!("Aucune signature pour user {} (id: {})", user.username, user.id);
             return (StatusCode::NOT_FOUND, "Signature not set. Please create a signature first.").into_response();
+        },
+        Err(e) => {
+            error!("Error fetching signature for user {}: {:?}", user.username, e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Error fetching signature").into_response();
         },
     };
 
@@ -98,7 +92,7 @@ pub async fn validate_edsquare(
         return (StatusCode::BAD_REQUEST, "planning_event_id is required").into_response();
     }
 
-    match validate_edsquare_code(&payload.code, &payload.planning_event_id, signature, &jwt_user.sub.to_string(), &state).await {
+    match validate_edsquare_code(&payload.code, &payload.planning_event_id, &signature, &jwt_user.sub.to_string(), &state).await {
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(e) => {
             error!("Error validating EDSquare code: {}", e);
@@ -125,7 +119,7 @@ pub async fn validate_edsquare(
 )]
 pub async fn validate_edsquare_multi(
     State(state): State<GlobalState>,
-    _jwt_user: JwtClaims,
+    jwt_user: JwtClaims,
     Json(payload): Json<ValidateEdsquareMultiPayload>,
 ) -> impl IntoResponse {
     let use_per_user_codes = payload.user_codes.as_ref().map(|m| !m.is_empty()).unwrap_or(false);
@@ -188,16 +182,25 @@ pub async fn validate_edsquare_multi(
             }
         };
 
-        // Vérifier la signature
-        let signature = match &user.signature_manuscrite {
-            Some(sig) => sig,
-            None => {
-                warn!("Signature not set for user {} ({}) in multi-validate", user.username, user.id);
+        // Choisir une signature au hasard parmi celles de l'utilisateur
+        let signature = match get_random_signature_for_user(&state, &user.id) {
+            Ok(Some(sig)) => sig,
+            Ok(None) => {
+                warn!("Aucune signature pour user {} ({}) in multi-validate", user.username, user.id);
                 results.push(EdsquareUserValidationResult {
                     user_id: user.id.clone(),
                     username: user.username.clone(),
                     success: false,
                     message: "Signature not set. Please create a signature first.".to_string(),
+                });
+                continue;
+            }
+            Err(_) => {
+                results.push(EdsquareUserValidationResult {
+                    user_id: user.id.clone(),
+                    username: user.username.clone(),
+                    success: false,
+                    message: "Error fetching signature.".to_string(),
                 });
                 continue;
             }
@@ -233,7 +236,7 @@ pub async fn validate_edsquare_multi(
         match validate_edsquare_code(
             code,
             planning_event_id,
-            signature,
+            &signature,
             &user.id,
             &state,
         ).await {
@@ -267,6 +270,42 @@ pub async fn validate_edsquare_multi(
     }
 
     let global_success = results.iter().all(|r| r.success);
+    let validated: Vec<String> = results.iter().filter(|r| r.success).map(|r| r.username.clone()).collect();
+    let failed: Vec<(String, String)> = results.iter().filter(|r| !r.success).map(|r| (r.username.clone(), r.message.clone())).collect();
+    let validated_codes: Vec<String> = results
+        .iter()
+        .filter(|r| r.success)
+        .map(|r| {
+            payload
+                .user_codes
+                .as_ref()
+                .and_then(|m| m.get(&r.user_id))
+                .cloned()
+                .unwrap_or_else(|| payload.code.clone())
+        })
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let initiator_username = get_user_by_id(&state, &jwt_user.sub)
+        .ok()
+        .flatten()
+        .map(|u| u.username)
+        .unwrap_or_else(|| jwt_user.sub.to_string());
+
+    if let Some(ref webhook_url) = state.edsquare_webhook_url {
+        if !validated.is_empty() {
+            let url = webhook_url.clone();
+            let validated_clone = validated.clone();
+            let failed_clone = failed.clone();
+            let codes_clone = validated_codes.clone();
+            let initiator = initiator_username.clone();
+            tokio::spawn(async move {
+                send_edsquare_webhook_bilan(&url, global_success, &validated_clone, &failed_clone, &codes_clone, &initiator).await;
+            });
+        }
+    }
+
     let response = ValidateEdsquareMultiResponse {
         global_success,
         results,
@@ -409,8 +448,7 @@ pub async fn get_edsquare_status(
     
     let user = match get_user_by_id(&state, &jwt_user.sub) {
         Ok(Some(user)) => {
-            debug!("Utilisateur trouvé: id={}, username={}, has_signature={}", 
-                user.id, user.username, user.signature_manuscrite.is_some());
+            debug!("Utilisateur trouvé: id={}, username={}", user.id, user.username);
             user
         },
         Ok(None) => {
@@ -423,7 +461,9 @@ pub async fn get_edsquare_status(
         },
     };
 
-    let has_signature = user.signature_manuscrite.is_some();
+    let has_signature = get_user_signatures(&state, &user_id_str)
+        .map(|sigs| !sigs.is_empty())
+        .unwrap_or(false);
     info!("Statut signature pour {}: {}", user.username, has_signature);
 
     let has_cookies = match get_edsquare_cookies(&state, &user_id_str) {
@@ -488,7 +528,9 @@ pub async fn get_edsquare_eligible_users(
     let mut eligible: Vec<EdsquareEligibleUser> = Vec::new();
 
     for user in users {
-        let has_signature = user.signature_manuscrite.is_some();
+        let has_signature = get_user_signatures(&state, &user.id)
+            .map(|sigs| !sigs.is_empty())
+            .unwrap_or(false);
         if !has_signature {
             continue;
         }
@@ -665,4 +707,73 @@ pub async fn get_planning_events_for_users(
 
     let response = PlanningEventsForUsersResponse { user_events };
     (StatusCode::OK, Json(response)).into_response()
+}
+
+/// Envoie un webhook bilan après validation EDSquare multi-utilisateurs.
+/// Discord : payload { "content": "message lisible" } (max 2000 caractères), inclut le(s) code(s) validé(s) et l'initiateur.
+/// Autres URLs : payload JSON structuré { "event", "initiated_by", "global_success", "validated", "failed", "codes" }.
+async fn send_edsquare_webhook_bilan(
+    webhook_url: &str,
+    global_success: bool,
+    validated: &[String],
+    failed: &[(String, String)],
+    validated_codes: &[String],
+    initiated_by: &str,
+) {
+    let is_discord = webhook_url.to_lowercase().contains("discord.com");
+    let body: serde_json::Value = if is_discord {
+        let mut parts: Vec<String> = Vec::new();
+        parts.push("**Bilan EDSquare**".to_string());
+        parts.push(format!("**Lancé par :** {}", initiated_by));
+        if !validated_codes.is_empty() {
+            parts.push(format!(
+                "**Code(s) validé(s) :** {}",
+                validated_codes.join(", ")
+            ));
+        }
+        if !validated.is_empty() {
+            parts.push(format!("✅ **Validés :** {}.", validated.join(", ")));
+        }
+        if !failed.is_empty() {
+            let failed_list: Vec<String> = failed
+                .iter()
+                .map(|(u, m)| format!("{} ({})", u, m))
+                .collect();
+            parts.push(format!("❌ **Échecs :** {}.", failed_list.join(" ; ")));
+        }
+        let content = parts.join("\n");
+        let content = if content.len() > 2000 {
+            format!("{}…", &content[..1997])
+        } else {
+            content
+        };
+        serde_json::json!({ "content": content })
+    } else {
+        serde_json::json!({
+            "event": "edsquare_validation_multi",
+            "initiated_by": initiated_by,
+            "global_success": global_success,
+            "validated": validated,
+            "validated_codes": validated_codes,
+            "failed": failed.iter().map(|(u, m)| serde_json::json!({ "username": u, "message": m })).collect::<Vec<_>>(),
+        })
+    };
+    let client = match reqwest::Client::builder().build() {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Webhook EDSquare: impossible de créer le client HTTP: {}", e);
+            return;
+        }
+    };
+    match client.post(webhook_url).json(&body).send().await {
+        Ok(res) if !res.status().is_success() => {
+            warn!("Webhook EDSquare: statut {} pour {}", res.status(), webhook_url);
+        }
+        Err(e) => {
+            warn!("Webhook EDSquare: erreur envoi vers {}: {}", webhook_url, e);
+        }
+        _ => {
+            info!("Webhook EDSquare: bilan envoyé (validés: {}, échecs: {})", validated.len(), failed.len());
+        }
+    }
 }

@@ -111,3 +111,15 @@ pub struct SaveSignaturePayload {
     pub signature: String,
 }
 
+#[derive(Debug, Queryable, Selectable, Serialize, ToSchema)]
+#[diesel(table_name = crate::schema::user_signatures)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[serde(rename_all = "camelCase")]
+pub struct UserSignature {
+    pub id: String,
+    pub user_id: String,
+    pub signature_data: String,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+

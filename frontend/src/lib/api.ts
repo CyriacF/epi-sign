@@ -11,6 +11,7 @@ import type {
     UserSignResponse,
     UpdateUserPayload,
     SaveSignaturePayload,
+    UserSignature,
     ValidateEdsquarePayload,
     ValidateEdsquareResponse,
     ValidateEdsquareMultiResponse,
@@ -188,17 +189,20 @@ export async function updateUserJWT(jwt: string, customFetch?: typeof fetch): Pr
     }, customFetch);
 }
 
-export async function saveSignature(signature: string, customFetch?: typeof fetch): Promise<void> {
+export async function saveSignature(signature: string, customFetch?: typeof fetch): Promise<UserSignature> {
     const payload: SaveSignaturePayload = { signature };
-    
-    const user: User = await apiCall<User>('/users/me/signature', {
+    return await apiCall<UserSignature>('/users/me/signature', {
         method: 'POST',
         body: JSON.stringify(payload)
     }, customFetch);
+}
 
-    if (browser) {
-        currentUser.set(user);
-    }
+export async function getSignatures(customFetch?: typeof fetch): Promise<UserSignature[]> {
+    return await apiCall<UserSignature[]>('/users/me/signatures', { method: 'GET' }, customFetch);
+}
+
+export async function deleteSignature(signatureId: string, customFetch?: typeof fetch): Promise<void> {
+    await apiCall<void>(`/users/me/signatures/${signatureId}`, { method: 'DELETE' }, customFetch);
 }
 
 export async function validateEdsquareCode(code: string, planningEventId: string, customFetch?: typeof fetch): Promise<ValidateEdsquareResponse> {

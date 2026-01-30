@@ -68,23 +68,28 @@
 
   function getPoint(e: MouseEvent | TouchEvent): { x: number; y: number } | null {
     if (!canvas) return null;
-    
+
     const rect = canvas.getBoundingClientRect();
-    
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    let clientX: number;
+    let clientY: number;
     if (e instanceof MouseEvent) {
-      return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-      };
+      clientX = e.clientX;
+      clientY = e.clientY;
     } else if (e instanceof TouchEvent) {
       const touch = e.touches[0] || e.changedTouches[0];
-      return {
-        x: touch.clientX - rect.left,
-        y: touch.clientY - rect.top,
-      };
+      clientX = touch.clientX;
+      clientY = touch.clientY;
+    } else {
+      return null;
     }
-    
-    return null;
+
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
   }
 
   function clear() {

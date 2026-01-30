@@ -29,6 +29,10 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/postgres
       JWT_SECRET: secret
       REGISTER_KEY: EpiteslaGANG
+      # Webhook bilan EDSquare (optionnel) : définit EDSQUARE_WEBHOOK_URL avant "docker compose up" pour activer.
+      EDSQUARE_WEBHOOK_URL: ${EDSQUARE_WEBHOOK_URL:-}
+      # Webhook bilan signature multiple (optionnel) : définit SIGN_WEBHOOK_URL pour activer.
+      SIGN_WEBHOOK_URL: ${SIGN_WEBHOOK_URL:-}
     ports:
       - "3001:3000"
     depends_on:

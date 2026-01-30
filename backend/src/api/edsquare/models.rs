@@ -10,7 +10,7 @@ pub struct ValidateEdsquarePayload {
     pub planning_event_id: String,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 pub struct ValidateEdsquareResponse {
     pub success: bool,
     pub message: String,

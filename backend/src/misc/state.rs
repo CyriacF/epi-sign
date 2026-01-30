@@ -9,6 +9,10 @@ use diesel::{
 pub struct GlobalState {
     pub db_pool: Arc<Pool<ConnectionManager<PgConnection>>>,
     pub register_key: String,
+    /// URL optionnelle pour envoyer un webhook bilan après validation EDSquare multi-utilisateurs (ex: Discord, Slack, API custom).
+    pub edsquare_webhook_url: Option<String>,
+    /// URL optionnelle pour envoyer un webhook bilan après signature multiple (ex: Discord, Slack, API custom).
+    pub sign_webhook_url: Option<String>,
 }
 
 impl GlobalState {
@@ -16,6 +20,8 @@ impl GlobalState {
         dotenvy::dotenv().ok();
         let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let register_key = std::env::var("REGISTER_KEY").expect("REGISTER_KEY must be set");
+        let edsquare_webhook_url = std::env::var("EDSQUARE_WEBHOOK_URL").ok().filter(|s| !s.trim().is_empty());
+        let sign_webhook_url = std::env::var("SIGN_WEBHOOK_URL").ok().filter(|s| !s.trim().is_empty());
         let manager = ConnectionManager::<PgConnection>::new(db_url);
         let db_pool = Pool::builder()
             .max_size(10)
@@ -24,7 +30,9 @@ impl GlobalState {
 
         GlobalState {
             db_pool: Arc::new(db_pool),
-            register_key
+            register_key,
+            edsquare_webhook_url,
+            sign_webhook_url,
         }
     }
 

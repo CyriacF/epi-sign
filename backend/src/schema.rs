@@ -37,9 +37,19 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    user_signatures (id) {
+        id -> Text,
+        user_id -> Text,
+        signature_data -> Text,
+        created_at -> Timestamp,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     cookies,
     users,
     edsquare_cookies,
     edsquare_credentials,
+    user_signatures,
 );

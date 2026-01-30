@@ -66,7 +66,7 @@ pub struct UserSignResponse {
     pub response: SignResponse,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, ToSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum SignResponse {
     Success,

@@ -3,15 +3,15 @@ use base64::{Engine as _, engine::general_purpose};
 use chrono::DateTime;
 use http::StatusCode;
 use serde_json::Value;
-use tracing::{debug, info, error};
+use tracing::{info, error};
 
 use crate::{
     api::{
         auth::{JwtClaims, hash_password},
         users::{
             User, get_user_by_id, get_user_by_username,
-            models::{JwtPayload, PublicUserResponse, UpdateUserPayload, SaveSignaturePayload},
-            services::{get_all_users, update_user_jwt, save_user_signature},
+            models::{JwtPayload, PublicUserResponse, UpdateUserPayload, SaveSignaturePayload, UserSignature},
+            services::{get_all_users, update_user_jwt, add_user_signature, get_user_signatures, delete_user_signature},
         },
     },
     misc::GlobalState,
@@ -29,10 +29,17 @@ use crate::{
     tag = "Users"
 )]
 pub async fn get_me(State(state): State<GlobalState>, jwt: JwtClaims) -> impl IntoResponse {
-    match get_user_by_id(&state, &jwt.sub) {
-        Ok(user) => Json(user).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Error fetching user").into_response(),
+    let mut user = match get_user_by_id(&state, &jwt.sub) {
+        Ok(Some(u)) => u,
+        Ok(None) => return (StatusCode::NOT_FOUND, "User not found").into_response(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Error fetching user").into_response(),
+    };
+    if let Ok(sigs) = get_user_signatures(&state, &user.id) {
+        if let Some(first) = sigs.first() {
+            user.signature_manuscrite = Some(first.signature_data.clone());
+        }
     }
+    (StatusCode::OK, Json(user)).into_response()
 }
 
 #[utoipa::path(
@@ -213,16 +220,12 @@ pub async fn save_signature(
     jwt_user: JwtClaims,
     Json(payload): Json<SaveSignaturePayload>,
 ) -> impl IntoResponse {
-    // Valider que c'est une data URL valide
     if !payload.signature.starts_with("data:image/png;base64,") {
         return (StatusCode::BAD_REQUEST, "Invalid signature format. Expected PNG base64 data URL").into_response();
     }
 
-    let mut user = match get_user_by_id(&state, &jwt_user.sub) {
-        Ok(Some(user)) => {
-            debug!("User found for signature save: id={}, username={}", user.id, user.username);
-            user
-        },
+    let user = match get_user_by_id(&state, &jwt_user.sub) {
+        Ok(Some(user)) => user,
         Ok(None) => {
             error!("User not found for signature save: id={}", jwt_user.sub);
             return (StatusCode::NOT_FOUND, "User not found").into_response();
@@ -233,18 +236,67 @@ pub async fn save_signature(
         },
     };
 
-    info!("Saving signature for user {}: {} characters", user.username, payload.signature.len());
-    user.signature_manuscrite = Some(payload.signature.clone());
-
-    match save_user_signature(&state, &user) {
-        Ok(_) => {
-            info!("Signature saved successfully for user {}", user.username);
-            debug!("Returning user with signature: has_signature={}", user.signature_manuscrite.is_some());
-            (StatusCode::OK, Json(user)).into_response()
+    info!("Adding signature for user {}: {} characters", user.username, payload.signature.len());
+    match add_user_signature(&state, &user.id, &payload.signature) {
+        Ok(sig) => {
+            info!("Signature added successfully for user {} (id: {})", user.username, sig.id);
+            (StatusCode::CREATED, Json(sig)).into_response()
         },
         Err(e) => {
-            error!("Error saving signature for user {}: {:?}", user.username, e);
+            error!("Error adding signature for user {}: {:?}", user.username, e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Error saving signature").into_response()
+        },
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/users/me/signatures",
+    description = "List all handwritten signatures for the current user",
+    responses(
+        (status = 200, description = "List of signatures", body = Vec<UserSignature>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "Users"
+)]
+pub async fn get_signatures(
+    State(state): State<GlobalState>,
+    jwt_user: JwtClaims,
+) -> impl IntoResponse {
+    let user_id = jwt_user.sub.to_string();
+    match get_user_signatures(&state, &user_id) {
+        Ok(sigs) => (StatusCode::OK, Json(sigs)).into_response(),
+        Err(e) => {
+            error!("Error fetching signatures: {:?}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error fetching signatures").into_response()
+        },
+    }
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/users/me/signatures/{id}",
+    description = "Delete a handwritten signature by id",
+    params(("id" = String, Path, description = "Signature id")),
+    responses(
+        (status = 204, description = "Signature deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Signature not found"),
+    ),
+    tag = "Users"
+)]
+pub async fn delete_signature(
+    State(state): State<GlobalState>,
+    jwt_user: JwtClaims,
+    axum::extract::Path(signature_id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let user_id = jwt_user.sub.to_string();
+    match delete_user_signature(&state, &signature_id, &user_id) {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => (StatusCode::NOT_FOUND, "Signature not found").into_response(),
+        Err(e) => {
+            error!("Error deleting signature: {:?}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error deleting signature").into_response()
         },
     }
 }

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { currentUser } from "$lib/stores";
-  import { updateUserProfile, saveSignature, loginEdsquare, getCurrentUser, getEdsquareStatus } from "$lib/api";
-  import type { ApiError, LoginEdsquareResponse, EdsquareStatusResponse } from "$lib/types";
+  import { updateUserProfile, saveSignature, getSignatures, deleteSignature, loginEdsquare, getCurrentUser, getEdsquareStatus } from "$lib/api";
+  import type { ApiError, LoginEdsquareResponse, EdsquareStatusResponse, UserSignature } from "$lib/types";
   import { fly, fade, scale } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import { goto } from "$app/navigation";
@@ -20,6 +20,8 @@
   let showPasswords: boolean = false;
   let showSignatureCanvas: boolean = false;
   let signatureImage: string | null = null;
+  let signatures: UserSignature[] = [];
+  let deletingSignatureId: string | null = null;
 
   // EDSquare login
   let showEdsquareLogin = false;
@@ -30,12 +32,22 @@
   let edsquareSuccess = "";
   let edsquareStatus: EdsquareStatusResponse | null = null;
 
-  // Initialize form + statut EDSquare
+  async function loadSignatures() {
+    try {
+      signatures = await getSignatures();
+      signatureImage = signatures.length > 0 ? signatures[0].signatureData : null;
+    } catch {
+      signatures = [];
+      signatureImage = null;
+    }
+  }
+
+  // Initialize form + signatures + statut EDSquare
   onMount(async () => {
     if ($currentUser) {
       username = $currentUser.username || "";
-      signatureImage = $currentUser.signatureManuscrite || null;
     }
+    await loadSignatures();
     try {
       edsquareStatus = await getEdsquareStatus();
     } catch {
@@ -46,7 +58,6 @@
   // Update form when currentUser changes
   $: if ($currentUser) {
     username = $currentUser.username || "";
-    signatureImage = $currentUser.signatureManuscrite || null;
   }
 
   async function handleSubmit() {
@@ -128,19 +139,32 @@
 
   async function handleSignatureSave(event: CustomEvent<string>) {
     const signatureDataUrl = event.detail;
-    signatureImage = signatureDataUrl;
     showSignatureCanvas = false;
-    
     try {
       await saveSignature(signatureDataUrl);
-      success = "Signature sauvegardée avec succès !";
-      // Recharger l'utilisateur pour mettre à jour le store
+      success = "Signature ajoutée avec succès !";
+      await loadSignatures();
       const user = await getCurrentUser();
       currentUser.set(user);
-      signatureImage = user.signatureManuscrite || null;
     } catch (e) {
       const apiError = e as ApiError;
       error = "Erreur lors de l'enregistrement de la signature";
+    }
+  }
+
+  async function handleDeleteSignature(sig: UserSignature) {
+    if (deletingSignatureId) return;
+    deletingSignatureId = sig.id;
+    try {
+      await deleteSignature(sig.id);
+      success = "Signature supprimée.";
+      await loadSignatures();
+      const user = await getCurrentUser();
+      currentUser.set(user);
+    } catch (e) {
+      error = "Erreur lors de la suppression de la signature";
+    } finally {
+      deletingSignatureId = null;
     }
   }
 
@@ -368,23 +392,42 @@
 
       <!-- Signature et EDSquare -->
       <div class="space-y-6">
-        <!-- Signature manuscrite -->
+        <!-- Signatures manuscrites (plusieurs, une au hasard utilisée pour EDSquare) -->
         <div
           class="glass-effect-card rounded-xl p-6 sm:p-8"
           in:fly={{ y: 20, duration: 400, delay: 200, easing: quintOut }}
         >
-          <h2 class="text-xl font-semibold gradient-text mb-6">Signature manuscrite</h2>
+          <h2 class="text-xl font-semibold gradient-text mb-6">Signatures manuscrites</h2>
+          <p class="text-sm text-gray-400 mb-4">
+            Vous pouvez ajouter autant de signatures que vous voulez. Lors d'une validation EDSquare, une sera choisie au hasard pour varier.
+          </p>
 
-          {#if signatureImage}
-            <div class="bg-white/5 rounded-lg p-4 border border-white/10 mb-4">
-              <p class="text-xs text-gray-400 mb-2">Signature actuelle :</p>
-              <div class="flex justify-center items-center max-h-[120px] overflow-hidden">
-                <img
-                  src={signatureImage}
-                  alt="Signature"
-                  class="max-w-[250px] max-h-[100px] w-auto h-auto rounded border border-white/20 object-contain"
-                />
-              </div>
+          {#if signatures.length > 0}
+            <div class="space-y-3 mb-4">
+              {#each signatures as sig (sig.id)}
+                <div class="bg-white/5 rounded-lg p-3 border border-white/10 flex items-center justify-between gap-3">
+                  <div class="flex justify-center items-center max-h-[80px] overflow-hidden min-w-0 flex-1">
+                    <img
+                      src={sig.signatureData}
+                      alt="Signature"
+                      class="max-w-[200px] max-h-[70px] w-auto h-auto rounded border border-white/20 object-contain"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    on:click={() => handleDeleteSignature(sig)}
+                    disabled={deletingSignatureId === sig.id}
+                    class="p-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 shrink-0"
+                    aria-label="Supprimer cette signature"
+                  >
+                    {#if deletingSignatureId === sig.id}
+                      <span class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-current"></span>
+                    {:else}
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    {/if}
+                  </button>
+                </div>
+              {/each}
             </div>
           {/if}
 
@@ -393,7 +436,7 @@
             on:click={openSignatureCanvas}
             class="btn-secondary w-full"
           >
-            {signatureImage ? "Modifier la signature" : "Créer une signature"}
+            Ajouter une signature
           </button>
         </div>
 

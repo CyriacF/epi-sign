@@ -81,8 +81,26 @@ cd backend
 cat > .env << EOF
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 JWT_SECRET=secret
+REGISTER_KEY=EpiteslaGANG
 EOF
 ```
+
+**Optionnel — Webhook bilan EDSquare** : après une validation de code EDSquare pour plusieurs personnes, le backend peut envoyer un webhook POST avec le bilan (qui a été validé, qui a échoué). Pour l’activer, ajoute dans le même `.env` :
+```bash
+EDSQUARE_WEBHOOK_URL=https://votre-url-de-webhook
+```
+Où mettre le webhook :
+- **Discord** : Salon → Intégrations → Webhooks → Nouveau webhook → copier l’URL.
+- **Slack** : Apps → Incoming Webhooks → ajouter une URL.
+- **API custom** : toute URL acceptant un POST JSON. Le corps envoyé est de la forme :
+  `{ "event": "edsquare_validation_multi", "global_success": true, "validated": ["Alice", "Bob"], "failed": [{"username": "Charlie", "message": "..."}] }`
+Si la variable est absente ou vide, aucun webhook n’est envoyé.
+
+**Optionnel — Webhook bilan signature multiple** : après une signature multiple (POST `/api/sign` avec plusieurs ULIDs), le backend peut envoyer un webhook avec le bilan (URL signée, qui a été validé, qui a échoué). Pour l’activer, ajoute dans le `.env` :
+```bash
+SIGN_WEBHOOK_URL=https://votre-url-de-webhook
+```
+Même format que EDSquare (Discord : message lisible ; API custom : `{ "event": "sign_multi", "url", "validated", "failed" }`).
 
 #### 3. Backend (Rust)
 

@@ -30,6 +30,7 @@ struct EdsquareCookie {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 struct EdsquareCredential {
     id: String,
+    #[allow(dead_code)]
     user_id: String,
     email: String,
     password: String,
@@ -206,6 +207,27 @@ pub fn get_edsquare_cookies(state: &GlobalState, user_id_param: &str) -> Result<
     }
 }
 
+/// Invalide les cookies EDSquare stockés pour un utilisateur (date du jour). Force une reconnexion au prochain appel.
+pub fn clear_edsquare_cookies_for_user(state: &GlobalState, user_id_param: &str) -> Result<(), String> {
+    use crate::schema::edsquare_cookies::dsl::*;
+    use diesel::prelude::*;
+
+    let current_date = chrono::Utc::now().date_naive();
+    let mut conn = match state.get_db_conn() {
+        Ok(conn) => conn,
+        Err(_) => return Err("Failed to get database connection".into()),
+    };
+
+    diesel::delete(edsquare_cookies.filter(user_id.eq(user_id_param)).filter(date.eq(current_date)))
+        .execute(&mut conn)
+        .map_err(|e| {
+            error!("Erreur lors de la suppression des cookies EDSquare: {}", e);
+            format!("Failed to clear EDSquare cookies: {}", e)
+        })?;
+    info!("Cookies EDSquare invalidés pour l'utilisateur {} (session expirée)", user_id_param);
+    Ok(())
+}
+
 /// Récupère les cookies EDSquare ; si aucun ou expirés, tente une reconnexion automatique avec les identifiants sauvegardés.
 pub async fn get_edsquare_cookies_or_reconnect(
     state: &GlobalState,
@@ -231,7 +253,8 @@ pub async fn get_edsquare_cookies_or_reconnect(
     }
 }
 
-pub async fn validate_edsquare_code(
+/// Effectue une tentative de validation EDSquare (cookies déjà récupérés ou à récupérer).
+async fn validate_edsquare_code_once(
     code: &str,
     planning_event_id: &str,
     signature: &str,
@@ -259,7 +282,6 @@ pub async fn validate_edsquare_code(
     let csrf_token = match fetch_csrf_token_with_cookies(&cookie_str).await {
         Ok(token_opt) => token_opt,
         Err(e) => {
-            // Si l'erreur indique une session expirée, retourner cette erreur directement
             if e.contains("Session EDSquare expirée") {
                 return Err(e);
             }
@@ -419,6 +441,40 @@ pub async fn validate_edsquare_code(
                 if response_text.len() > 200 { format!("{}...", &response_text[..200]) } else { response_text }))
         }
     }
+}
+
+pub async fn validate_edsquare_code(
+    code: &str,
+    planning_event_id: &str,
+    signature: &str,
+    user_id: &str,
+    state: &GlobalState,
+) -> Result<ValidateEdsquareResponse, String> {
+    let result = validate_edsquare_code_once(code, planning_event_id, signature, user_id, state).await;
+    if result.is_ok() {
+        return result;
+    }
+    let err = result.unwrap_err();
+    let session_expired = err.contains("Session EDSquare expirée")
+        || err.contains("Veuillez vous reconnecter")
+        || err.to_lowercase().contains("cookie")
+        || err.to_lowercase().contains("session");
+    if !session_expired {
+        return Err(err);
+    }
+    info!(
+        "Session EDSquare expirée pour {}, invalidation des cookies puis reconnexion et nouvel essai",
+        user_id
+    );
+    if let Err(e) = clear_edsquare_cookies_for_user(state, user_id) {
+        warn!("Impossible d'invalider les cookies EDSquare: {}", e);
+        return Err(err);
+    }
+    if let Err(reconnect_err) = login_edsquare_with_saved(user_id, state).await {
+        warn!("Reconnexion EDSquare échouée après session expirée: {}", reconnect_err);
+        return Err(err);
+    }
+    validate_edsquare_code_once(code, planning_event_id, signature, user_id, state).await
 }
 
 /// Récupère les événements du planning EDSquare pour une date donnée (json_dashboard).

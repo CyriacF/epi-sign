@@ -1,11 +1,13 @@
 use axum::{
     Router,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
 };
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
+use diesel::prelude::*;
+use rand::seq::SliceRandom;
 use ulid::Ulid;
 
-use super::models::User;
+use super::models::{User, UserSignature};
 use crate::{api::auth::RegisterPayload, misc::GlobalState};
 
 pub fn get_routes(state: GlobalState) -> Router {
@@ -15,6 +17,8 @@ pub fn get_routes(state: GlobalState) -> Router {
         .route("/me", patch(super::endpoints::update_user))
         .route("/me/update-jwt", post(super::endpoints::update_jwt))
         .route("/me/signature", post(super::endpoints::save_signature))
+        .route("/me/signatures", get(super::endpoints::get_signatures))
+        .route("/me/signatures/{id}", delete(super::endpoints::delete_signature))
         .with_state(state)
 }
 
@@ -181,18 +185,70 @@ pub fn update_user(state: &GlobalState, user: &User) -> Result<(), diesel::resul
     Ok(())
 }
 
-pub fn save_user_signature(state: &GlobalState, user: &User) -> Result<(), diesel::result::Error> {
-    use crate::schema::users::dsl::*;
-    use diesel::prelude::*;
+pub fn add_user_signature(
+    state: &GlobalState,
+    user_id_param: &str,
+    signature_data_param: &str,
+) -> Result<UserSignature, diesel::result::Error> {
+    use crate::schema::user_signatures::dsl::*;
 
-    let mut conn = match state.get_db_conn() {
-        Ok(conn) => conn,
-        Err(_) => return Err(diesel::result::Error::NotFound),
-    };
-
-    diesel::update(users.filter(id.eq(&user.id)))
-        .set(signature_manuscrite.eq(&user.signature_manuscrite))
+    let mut conn = state.get_db_conn().map_err(|_| diesel::result::Error::NotFound)?;
+    let sig_id = Ulid::new().to_string();
+    let now = Utc::now().naive_utc();
+    diesel::insert_into(user_signatures)
+        .values((
+            id.eq(&sig_id),
+            user_id.eq(user_id_param),
+            signature_data.eq(signature_data_param),
+            created_at.eq(now),
+        ))
         .execute(&mut conn)?;
+    Ok(UserSignature {
+        id: sig_id,
+        user_id: user_id_param.to_string(),
+        signature_data: signature_data_param.to_string(),
+        created_at: now,
+    })
+}
 
-    Ok(())
+pub fn get_user_signatures(
+    state: &GlobalState,
+    user_id_param: &str,
+) -> Result<Vec<UserSignature>, diesel::result::Error> {
+    use crate::schema::user_signatures::dsl::*;
+
+    let mut conn = state.get_db_conn().map_err(|_| diesel::result::Error::NotFound)?;
+    user_signatures
+        .filter(user_id.eq(user_id_param))
+        .order(created_at.desc())
+        .select(UserSignature::as_select())
+        .load(&mut conn)
+}
+
+pub fn get_random_signature_for_user(
+    state: &GlobalState,
+    user_id_param: &str,
+) -> Result<Option<String>, diesel::result::Error> {
+    let sigs = get_user_signatures(state, user_id_param)?;
+    if sigs.is_empty() {
+        return Ok(None);
+    }
+    let mut rng = rand::thread_rng();
+    let chosen = sigs.choose(&mut rng).map(|s| s.signature_data.clone());
+    Ok(chosen)
+}
+
+pub fn delete_user_signature(
+    state: &GlobalState,
+    signature_id: &str,
+    user_id_param: &str,
+) -> Result<bool, diesel::result::Error> {
+    use crate::schema::user_signatures::dsl::*;
+
+    let mut conn = state.get_db_conn().map_err(|_| diesel::result::Error::NotFound)?;
+    let deleted = diesel::delete(user_signatures)
+        .filter(id.eq(signature_id))
+        .filter(user_id.eq(user_id_param))
+        .execute(&mut conn)?;
+    Ok(deleted > 0)
 }

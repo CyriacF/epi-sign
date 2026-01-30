@@ -61,6 +61,13 @@ export interface SaveSignaturePayload {
     signature: string;
 }
 
+export interface UserSignature {
+    id: string;
+    userId: string;
+    signatureData: string;
+    createdAt: string;
+}
+
 export interface ValidateEdsquarePayload {
     code: string;
     planning_event_id: string;
