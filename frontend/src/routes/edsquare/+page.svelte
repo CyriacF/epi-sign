@@ -155,17 +155,18 @@
   $: usersNeedingPerUserEvent = userEventsList.filter((ue) => !ue.error && ue.events.length > 0);
   $: needPerUserDropdowns = planningEvents.length === 0 && usersNeedingPerUserEvent.length > 1;
 
-  /** Groupes (event id → utilisateurs) pour afficher un seul champ code par cours. Ordre = ordre des utilisateurs en haut (premier cours affiché = premier bloc code). */
+  /** Groupes (event id → utilisateurs) pour un sélecteur de cours et un code par groupe. Chaque groupe a la liste des événements disponibles (union des cours de tous les users du groupe). */
   $: eventGroups = (() => {
     if (!needPerUserDropdowns) return [];
-    const byEvent: Record<string, { eventId: string; eventLabel: string; userIds: string[]; usernames: string[] }> = {};
+    type Grp = { eventId: string; eventLabel: string; userIds: string[]; usernames: string[]; availableEvents: EdsquarePlanningEvent[] };
+    const byEvent: Record<string, Grp> = {};
     for (const ue of usersNeedingPerUserEvent) {
       const eventId = userEventOverrides[ue.user_id];
       if (!eventId) continue;
       const evt = ue.events.find((e) => String(e.id) === eventId);
       const eventLabel = evt ? `${evt.title} — ${evt.start.slice(0, 16).replace("T", " ")} → ${evt.end.slice(11, 16)}` : eventId;
       if (!byEvent[eventId]) {
-        byEvent[eventId] = { eventId, eventLabel, userIds: [], usernames: [] };
+        byEvent[eventId] = { eventId, eventLabel, userIds: [], usernames: [], availableEvents: [] };
       }
       byEvent[eventId].userIds.push(ue.user_id);
       byEvent[eventId].usernames.push(ue.username);
@@ -175,7 +176,19 @@
       const eventId = userEventOverrides[ue.user_id];
       if (eventId && !order.includes(eventId)) order.push(eventId);
     }
-    return order.map((id) => byEvent[id]).filter(Boolean);
+    const groups = order.map((id) => byEvent[id]).filter(Boolean) as Grp[];
+    for (const grp of groups) {
+      const eventMap = new Map<number, EdsquarePlanningEvent>();
+      for (const ue of usersNeedingPerUserEvent) {
+        if (grp.userIds.includes(ue.user_id)) {
+          for (const evt of ue.events) {
+            eventMap.set(evt.id, evt);
+          }
+        }
+      }
+      grp.availableEvents = Array.from(eventMap.values());
+    }
+    return groups;
   })();
 
   function handleUserToggle(event: CustomEvent<string>) {
@@ -611,34 +624,34 @@
             </div>
           {:else if needPerUserDropdowns}
             <p class="text-sm font-medium text-yellow-400 mb-2">
-              Les personnes sélectionnées n'ont pas toutes les mêmes cours — choisissez le cours pour chacun, puis un code par cours (même event = même code) :
+              Les personnes sélectionnées n'ont pas toutes les mêmes cours — un sélecteur par groupe de personnes ayant le même cours, puis un code par cours :
             </p>
             <div class="space-y-4">
-              <!-- Cours : un dropdown par personne -->
-              <div class="space-y-2">
-                {#each usersNeedingPerUserEvent as ue}
-                  <div>
-                    <label for="event-{ue.user_id}" class="block text-xs text-gray-400 mb-1">Cours de {ue.username}</label>
-                    <select
-                      id="event-{ue.user_id}"
-                      value={userEventOverrides[ue.user_id] ?? ""}
-                      on:change={(e) => {
-                        const v = (e.currentTarget as HTMLSelectElement).value;
-                        userEventOverrides = { ...userEventOverrides, [ue.user_id]: v };
-                      }}
-                      disabled={validating || !isReady}
-                      class="input-field w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-red-500/50"
-                    >
-                      <option value="">— Choisir un cours —</option>
-                      {#each ue.events as evt}
-                        <option value={String(evt.id)}>
-                          {evt.title} — {evt.start.slice(0, 16).replace("T", " ")} → {evt.end.slice(11, 16)}
-                        </option>
-                      {/each}
-                    </select>
-                  </div>
-                {/each}
-              </div>
+              <!-- Cours : un dropdown par groupe (même cours = un seul sélecteur) -->
+              {#each eventGroups as grp}
+                <div class="p-3 rounded-lg bg-white/5 border border-white/10 space-y-2">
+                  <div class="text-xs text-gray-400">Pour : {grp.usernames.join(", ")}</div>
+                  <select
+                    id="event-grp-{grp.eventId}"
+                    value={grp.eventId}
+                    on:change={(e) => {
+                      const v = (e.currentTarget as HTMLSelectElement).value;
+                      const next = { ...userEventOverrides };
+                      for (const uid of grp.userIds) next[uid] = v;
+                      userEventOverrides = next;
+                    }}
+                    disabled={validating || !isReady}
+                    class="input-field w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-red-500/50"
+                  >
+                    <option value="">— Choisir un cours —</option>
+                    {#each grp.availableEvents as evt}
+                      <option value={String(evt.id)}>
+                        {evt.title} — {evt.start.slice(0, 16).replace("T", " ")} → {evt.end.slice(11, 16)}
+                      </option>
+                    {/each}
+                  </select>
+                </div>
+              {/each}
               <!-- Un code par cours (partagé par tous ceux qui ont ce cours) -->
               <div class="pt-2 border-t border-white/10">
                 <p class="text-xs text-gray-400 mb-2">Un code par cours — même event id = même code pour tous les utilisateurs de ce cours</p>
