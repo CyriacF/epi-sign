@@ -15,6 +15,7 @@ pub fn get_routes(state: GlobalState) -> Router {
         .route("/", get(super::endpoints::get_users))
         .route("/me", get(super::endpoints::get_me))
         .route("/me", patch(super::endpoints::update_user))
+        .route("/me", delete(super::endpoints::delete_account))
         .route("/me/update-jwt", post(super::endpoints::update_jwt))
         .route("/me/signature", post(super::endpoints::save_signature))
         .route("/me/signatures", get(super::endpoints::get_signatures))
@@ -251,4 +252,30 @@ pub fn delete_user_signature(
         .filter(user_id.eq(user_id_param))
         .execute(&mut conn)?;
     Ok(deleted > 0)
+}
+
+/// Supprime le compte utilisateur et toutes les données associées (signatures, EDSquare cookies/credentials).
+pub fn delete_user_account(
+    state: &GlobalState,
+    user_id_param: &str,
+) -> Result<bool, diesel::result::Error> {
+    let mut conn = state.get_db_conn().map_err(|_| diesel::result::Error::NotFound)?;
+
+    {
+        use crate::schema::user_signatures::dsl::*;
+        diesel::delete(user_signatures.filter(user_id.eq(user_id_param))).execute(&mut conn)?;
+    }
+    {
+        use crate::schema::edsquare_credentials::dsl::*;
+        diesel::delete(edsquare_credentials.filter(user_id.eq(user_id_param))).execute(&mut conn)?;
+    }
+    {
+        use crate::schema::edsquare_cookies::dsl::*;
+        diesel::delete(edsquare_cookies.filter(user_id.eq(user_id_param))).execute(&mut conn)?;
+    }
+    {
+        use crate::schema::users::dsl::*;
+        let deleted = diesel::delete(users.filter(id.eq(user_id_param))).execute(&mut conn)?;
+        return Ok(deleted > 0);
+    }
 }

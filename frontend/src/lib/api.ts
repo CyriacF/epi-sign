@@ -205,6 +205,15 @@ export async function deleteSignature(signatureId: string, customFetch?: typeof 
     await apiCall<void>(`/users/me/signatures/${signatureId}`, { method: 'DELETE' }, customFetch);
 }
 
+/** Supprime le compte de l'utilisateur connecté et toutes les données associées. Déconnecte ensuite côté client. */
+export async function deleteAccount(customFetch?: typeof fetch): Promise<void> {
+    await apiCall<void>('/users/me', { method: 'DELETE' }, customFetch);
+    if (browser) {
+        isAuthenticated.set(false);
+        currentUser.set(null);
+    }
+}
+
 export async function validateEdsquareCode(code: string, planningEventId: string, customFetch?: typeof fetch): Promise<ValidateEdsquareResponse> {
     const payload: ValidateEdsquarePayload = { code, planning_event_id: planningEventId };
     

@@ -11,7 +11,7 @@ use crate::{
         users::{
             User, get_user_by_id, get_user_by_username,
             models::{JwtPayload, PublicUserResponse, UpdateUserPayload, SaveSignaturePayload, UserSignature},
-            services::{get_all_users, update_user_jwt, add_user_signature, get_user_signatures, delete_user_signature},
+            services::{get_all_users, update_user_jwt, add_user_signature, get_user_signatures, delete_user_signature, delete_user_account},
         },
     },
     misc::GlobalState,
@@ -297,6 +297,32 @@ pub async fn delete_signature(
         Err(e) => {
             error!("Error deleting signature: {:?}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Error deleting signature").into_response()
+        },
+    }
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/users/me",
+    description = "Delete the current user account and all associated data",
+    responses(
+        (status = 204, description = "Account deleted successfully"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "User not found"),
+    ),
+    tag = "Users"
+)]
+pub async fn delete_account(
+    State(state): State<GlobalState>,
+    jwt_user: JwtClaims,
+) -> impl IntoResponse {
+    let user_id = jwt_user.sub.to_string();
+    match delete_user_account(&state, &user_id) {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => (StatusCode::NOT_FOUND, "User not found").into_response(),
+        Err(e) => {
+            error!("Error deleting account: {:?}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error deleting account").into_response()
         },
     }
 }

@@ -121,4 +121,3 @@ pub struct UserSignature {
     pub signature_data: String,
     pub created_at: chrono::NaiveDateTime,
 }
-

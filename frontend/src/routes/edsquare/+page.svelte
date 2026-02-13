@@ -15,7 +15,7 @@
   } from "$lib/types";
   import AlertMessage from "$lib/components/AlertMessage.svelte";
   import UsersList from "$lib/components/UsersList.svelte";
-  import { ArrowLeft, CheckCircle2, XCircle } from "@lucide/svelte";
+  import { ArrowLeft, CheckCircle2, XCircle, Info } from "@lucide/svelte";
   import { fly, scale } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import { goto } from "$app/navigation";
@@ -758,27 +758,42 @@
 
       <!-- Result (résumé inline) -->
       {#if validationResult}
+        {@const isAlreadyDone = validationResult.success && validationResult.message.includes('Déjà validé')}
         <div
-          class="mt-6 p-4 rounded-xl border {validationResult.success
-            ? 'bg-green-500/10 border-green-500/50'
-            : 'bg-red-500/10 border-red-500/50'}"
+          class="mt-6 p-4 rounded-xl border {isAlreadyDone
+            ? 'bg-amber-500/10 border-amber-500/50'
+            : validationResult.success
+              ? 'bg-green-500/10 border-green-500/50'
+              : 'bg-red-500/10 border-red-500/50'}"
           in:scale={{ duration: 400, easing: quintOut }}
         >
           <div class="flex items-center gap-3">
-            {#if validationResult.success}
+            {#if isAlreadyDone}
+              <Info class="w-6 h-6 text-amber-400" />
+            {:else if validationResult.success}
               <CheckCircle2 class="w-6 h-6 text-green-400" />
             {:else}
               <XCircle class="w-6 h-6 text-red-400" />
             {/if}
             <div>
               <p
-                class="font-semibold {validationResult.success
-                  ? 'text-green-400'
-                  : 'text-red-400'}"
+                class="font-semibold {isAlreadyDone
+                  ? 'text-amber-400'
+                  : validationResult.success
+                    ? 'text-green-400'
+                    : 'text-red-400'}"
               >
-                {validationResult.message}
+                {#if isAlreadyDone}
+                  Déjà validé
+                {:else}
+                  {validationResult.message}
+                {/if}
               </p>
-              {#if validationResult.success}
+              {#if isAlreadyDone}
+                <p class="text-sm text-gray-400 mt-1">
+                  L'événement a déjà été validé par quelqu'un.
+                </p>
+              {:else if validationResult.success}
                 <p class="text-sm text-gray-400 mt-1">
                   Code validé : {validationResult.code}
                 </p>

@@ -102,6 +102,18 @@ SIGN_WEBHOOK_URL=https://votre-url-de-webhook
 ```
 Même format que EDSquare (Discord : message lisible ; API custom : `{ "event": "sign_multi", "url", "validated", "failed" }`).
 
+**Optionnel — Supprimer d’autres utilisateurs (admin)** : pour pouvoir supprimer un utilisateur par son id depuis la machine (curl, script, etc.), définis une clé admin dans le `.env` :
+```bash
+ADMIN_KEY=ta-cle-secrete-admin
+```
+Ensuite, depuis un terminal ou un script :
+```bash
+# Remplacer USER_ID par l’id de l’utilisateur (ex: 01ARZ3NDEKTSV4RRFFQ69G5FAV) et TA_CLE par ta valeur ADMIN_KEY
+curl -X DELETE "http://localhost:3000/api/admin/users/USER_ID" \
+  -H "X-Admin-Key: TA_CLE"
+```
+Réponse : `204 No Content` si l’utilisateur a été supprimé, `404` si l’id n’existe pas, `403` si la clé est absente ou invalide. Si `ADMIN_KEY` n’est pas défini, l’endpoint renvoie `501`.
+
 #### 3. Backend (Rust)
 
 ```bash

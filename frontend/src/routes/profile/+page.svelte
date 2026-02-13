@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { currentUser } from "$lib/stores";
-  import { updateUserProfile, saveSignature, getSignatures, deleteSignature, loginEdsquare, getCurrentUser, getEdsquareStatus } from "$lib/api";
+  import { updateUserProfile, saveSignature, getSignatures, deleteSignature, deleteAccount, loginEdsquare, getCurrentUser, getEdsquareStatus } from "$lib/api";
   import type { ApiError, LoginEdsquareResponse, EdsquareStatusResponse, UserSignature } from "$lib/types";
   import { fly, fade, scale } from "svelte/transition";
   import { quintOut } from "svelte/easing";
@@ -22,6 +22,8 @@
   let signatureImage: string | null = null;
   let signatures: UserSignature[] = [];
   let deletingSignatureId: string | null = null;
+  let showConfirmDelete = false;
+  let deletingAccount = false;
 
   // EDSquare login
   let showEdsquareLogin = false;
@@ -219,6 +221,30 @@
 
   function goBack() {
     goto("/");
+  }
+
+  function askDeleteAccount() {
+    showConfirmDelete = true;
+  }
+
+  function cancelDeleteAccount() {
+    showConfirmDelete = false;
+  }
+
+  async function confirmDeleteAccount() {
+    if (deletingAccount) return;
+    deletingAccount = true;
+    error = "";
+    try {
+      await deleteAccount();
+      goto("/login");
+    } catch (e) {
+      const apiError = e as ApiError;
+      error = apiError.message || "Erreur lors de la suppression du compte";
+    } finally {
+      deletingAccount = false;
+      showConfirmDelete = false;
+    }
   }
 </script>
 
@@ -560,8 +586,71 @@
             </div>
           {/if}
         </div>
+
+        <!-- Supprimer mon compte -->
+        <div
+          class="glass-effect-card rounded-xl p-6 sm:p-8 border border-red-500/20"
+          in:fly={{ y: 20, duration: 400, delay: 400, easing: quintOut }}
+        >
+          <h2 class="text-xl font-semibold text-red-300 mb-2">Zone de danger</h2>
+          <p class="text-sm text-gray-400 mb-4">
+            La suppression de votre compte est définitive. Toutes vos données (profil, signatures, identifiants EDSquare) seront effacées.
+          </p>
+          <button
+            type="button"
+            on:click={askDeleteAccount}
+            disabled={deletingAccount}
+            class="w-full py-3 px-4 rounded-lg font-medium bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 transition-colors disabled:opacity-50"
+          >
+            Supprimer mon compte
+          </button>
+        </div>
       </div>
     </div>
+
+    <!-- Modal confirmation suppression compte -->
+    {#if showConfirmDelete}
+      <div
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-delete-title"
+      >
+        <div
+          class="glass-effect-card rounded-xl p-6 max-w-md w-full border border-red-500/30"
+          on:keydown={(e) => e.key === 'Escape' && cancelDeleteAccount()}
+        >
+          <h2 id="confirm-delete-title" class="text-xl font-semibold text-red-300 mb-2">
+            Confirmer la suppression
+          </h2>
+          <p class="text-gray-300 mb-6">
+            Êtes-vous sûr de vouloir supprimer définitivement votre compte ? Cette action est irréversible.
+          </p>
+          <div class="flex gap-3">
+            <button
+              type="button"
+              on:click={cancelDeleteAccount}
+              disabled={deletingAccount}
+              class="flex-1 py-2.5 px-4 rounded-lg font-medium bg-white/10 hover:bg-white/20 text-gray-200 border border-white/20"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              on:click={confirmDeleteAccount}
+              disabled={deletingAccount}
+              class="flex-1 py-2.5 px-4 rounded-lg font-medium bg-red-600 hover:bg-red-700 text-white"
+            >
+              {#if deletingAccount}
+                <span class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
+              {:else}
+                Supprimer définitivement
+              {/if}
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 </div>
 

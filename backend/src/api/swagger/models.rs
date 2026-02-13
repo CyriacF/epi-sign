@@ -16,6 +16,7 @@ use utoipa::OpenApi;
         users::endpoints::save_signature,
         users::endpoints::get_signatures,
         users::endpoints::delete_signature,
+        users::endpoints::delete_account,
         sign::endpoints::sign,
         sign::endpoints::status
     ),

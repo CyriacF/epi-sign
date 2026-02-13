@@ -5,7 +5,7 @@ use crate::api::{
     },
     sign::CookieItem,
 };
-use crate::misc::GlobalState;
+use crate::misc::{GlobalState, PlanningEventsCacheEntry};
 use http::header::COOKIE;
 use http::StatusCode;
 use tracing::{error, info, warn, debug};
@@ -13,6 +13,7 @@ use chrono::NaiveDate;
 use serde_json::Value;
 use diesel::prelude::*;
 use urlencoding::encode;
+use std::time::{SystemTime, Duration};
 
 #[derive(diesel::Queryable, diesel::Selectable)]
 #[diesel(table_name = crate::schema::edsquare_cookies)]
@@ -401,9 +402,21 @@ async fn validate_edsquare_code_once(
         StatusCode::OK => {
             // Même en 200, EDSquare peut renvoyer un JS avec un toastr d'erreur
             // Exemple : toastr.error("Le code saisi n&#39;est plus valide")
+            // "Événement introuvable" = déjà validé/signé par quelqu'un → on le traite comme succès
             if let Ok(re) = regex::Regex::new(r#"toastr\.error\("([^"]+)""#) {
                 if let Some(caps) = re.captures(&response_text) {
                     let raw_msg = caps.get(1).map(|m| m.as_str()).unwrap_or("Erreur EDSquare");
+                    if raw_msg.to_lowercase().contains("introuvable") {
+                        info!(
+                            "EDSquare: événement introuvable = déjà validé/signé, traité comme succès"
+                        );
+                        return Ok(ValidateEdsquareResponse {
+                            success: true,
+                            message: "Déjà validé (événement déjà traité)".to_string(),
+                            code: code.to_string(),
+                            planning_event_id: Some(planning_event_id.to_string()),
+                        });
+                    }
                     error!(
                         "EDSquare a renvoyé une erreur malgré le status 200: {}",
                         raw_msg
@@ -479,11 +492,33 @@ pub async fn validate_edsquare_code(
 
 /// Récupère les événements du planning EDSquare pour une date donnée (json_dashboard).
 /// Utilise les cookies EDSquare de l'utilisateur (reconnexion auto si identifiants sauvegardés).
+/// Met en cache les résultats pendant 5 minutes pour éviter de spammer l'API EDSquare.
 pub async fn fetch_planning_events(
     state: &GlobalState,
     user_id_param: &str,
     date: NaiveDate,
 ) -> Result<Vec<EdsquarePlanningEvent>, String> {
+    // Vérifier le cache d'abord
+    let cache_key = (user_id_param.to_string(), date);
+    {
+        let cache = state.edsquare_planning_cache.read().await;
+        if let Some(entry) = cache.get(&cache_key) {
+            // Vérifier si le cache est encore valide (5 minutes)
+            if let Ok(elapsed) = entry.cached_at.elapsed() {
+                if elapsed < Duration::from_secs(5 * 60) {
+                    info!(
+                        "Récupération depuis le cache: {} événement(s) EDSquare pour la date {} (user: {})",
+                        entry.events.len(),
+                        date,
+                        user_id_param
+                    );
+                    return Ok(entry.events.clone());
+                }
+            }
+        }
+    }
+
+    // Cache expiré ou absent, faire la requête
     let cookies = get_edsquare_cookies_or_reconnect(state, user_id_param).await?;
 
     let cookie_str = cookies
@@ -507,6 +542,7 @@ pub async fn fetch_planning_events(
         Err(e) => return Err(format!("Failed to create HTTP client: {}", e)),
     };
 
+    info!("Requête EDSquare pour récupérer les cours (user: {}, date: {})", user_id_param, date);
     let response = client
         .get(&url)
         .header(COOKIE, &cookie_str)
@@ -536,8 +572,24 @@ pub async fn fetch_planning_events(
         format!("Réponse EDSquare invalide: {}", e)
     })?;
 
+    // Mettre en cache le résultat
+    {
+        let mut cache = state.edsquare_planning_cache.write().await;
+        cache.insert(
+            cache_key,
+            PlanningEventsCacheEntry {
+                events: events.clone(),
+                cached_at: SystemTime::now(),
+            },
+        );
+        // Nettoyer les entrées expirées (garder le cache propre)
+        cache.retain(|_, entry| {
+            entry.cached_at.elapsed().map(|e| e < Duration::from_secs(5 * 60)).unwrap_or(false)
+        });
+    }
+
     info!(
-        "Récupération de {} événement(s) EDSquare pour la date {} (user: {})",
+        "Récupération de {} événement(s) EDSquare pour la date {} (user: {}) - mis en cache",
         events.len(),
         date,
         user_id_param

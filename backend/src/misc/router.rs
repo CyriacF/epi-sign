@@ -16,11 +16,19 @@ use crate::{
 pub fn get_router() -> Router {
     let state = GlobalState::new();
 
-    Router::new()
+    // Routes admin (clé X-Admin-Key, pas de JWT) — à merger avant les routes protégées
+    let admin_routes = Router::new()
+        .nest("/api/admin", crate::api::admin::get_routes(state.clone()));
+
+    let api_routes = Router::new()
         .nest("/api/sign", crate::api::sign::get_routes(state.clone()))
         .nest("/api/users", crate::api::users::get_routes(state.clone()))
         .nest("/api/edsquare", crate::api::edsquare::get_routes(state.clone()))
-        .layer(from_fn(api::auth::auth_middleware))
+        .layer(from_fn(api::auth::auth_middleware));
+
+    Router::new()
+        .merge(admin_routes)
+        .merge(api_routes)
         .nest(
             "/api/auth",
             crate::api::auth::get_no_auth_routes(state.clone()),
@@ -37,8 +45,17 @@ pub fn get_router() -> Router {
                 .allow_origin([axum::http::HeaderValue::from_static(
                     "http://localhost:5173",
                 )]) // or use .allow_origin(AllowOrigin::same_origin()) if you want only same-origin
-                .allow_methods(vec![axum::http::Method::GET, axum::http::Method::POST])
-                .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::ACCEPT])
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::PATCH,
+                    axum::http::Method::DELETE,
+                ])
+                .allow_headers([
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::header::ACCEPT,
+                    axum::http::header::HeaderName::from_static("x-admin-key"),
+                ])
                 .allow_credentials(true),
         )
 }
