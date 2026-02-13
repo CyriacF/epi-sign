@@ -42,11 +42,47 @@
   let planningEventIdInput = "";
   let loadingEvents = false;
   let userEventsList: UserPlanningEvents[] = [];
-  // Cache local pour éviter de spammer EDSquare :
+  // Cache local pour éviter de spammer EDSquare (persisté en localStorage) :
   // - promoByUserId : mappe un user vers sa promo (ex: "MSc 2") déduite du titre du cours
   // - promoEventsCache : mappe (promo, date) vers la liste d'événements de la journée
+  const STORAGE_KEY_PROMO = "edsquare_promo_by_user";
+  const STORAGE_KEY_EVENTS = "edsquare_events_cache";
+  const CACHE_MAX_AGE_DAYS = 14; // Ne garder que les événements des 14 derniers jours
+
   let promoByUserId: Record<string, string> = {};
   let promoEventsCache: Record<string, EdsquarePlanningEvent[]> = {};
+
+  function loadPromoCacheFromStorage() {
+    if (!browser) return;
+    try {
+      const rawPromo = localStorage.getItem(STORAGE_KEY_PROMO);
+      if (rawPromo) promoByUserId = JSON.parse(rawPromo);
+      const rawEvents = localStorage.getItem(STORAGE_KEY_EVENTS);
+      if (rawEvents) {
+        const parsed = JSON.parse(rawEvents) as Record<string, EdsquarePlanningEvent[]>;
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - CACHE_MAX_AGE_DAYS);
+        const filtered: Record<string, EdsquarePlanningEvent[]> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          const datePart = k.split("::")[1];
+          if (datePart && new Date(datePart) >= cutoff) filtered[k] = v;
+        }
+        promoEventsCache = filtered;
+      }
+    } catch (e) {
+      console.warn("Erreur chargement cache promo EDSquare:", e);
+    }
+  }
+
+  function savePromoCacheToStorage() {
+    if (!browser) return;
+    try {
+      localStorage.setItem(STORAGE_KEY_PROMO, JSON.stringify(promoByUserId));
+      localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(promoEventsCache));
+    } catch (e) {
+      console.warn("Erreur sauvegarde cache promo EDSquare:", e);
+    }
+  }
   let userEventOverrides: Record<string, string> = {};
   let userCodeOverrides: Record<string, string> = {};
   /** Un code par event id quand les cours diffèrent (même event = même code, partagé par plusieurs users) */
@@ -54,9 +90,12 @@
   let eligibleUserIds: string[] = [];
   let showResultsModal = false;
   let edsquareResults: EdsquareUserValidationResult[] = [];
+  let promoCacheLoaded = false;
 
-  // Charger les utilisateurs au montage
+  // Charger les utilisateurs et le cache promo au montage
   onMount(async () => {
+    loadPromoCacheFromStorage();
+    promoCacheLoaded = true;
     try {
       const loadedUsers = await loadUsers();
       users = loadedUsers;
@@ -134,6 +173,7 @@
       }
 
       // 4) Mettre à jour les résultats et déduire la promo quand c'est possible
+      let cacheUpdated = false;
       for (const ue of apiUserEvents) {
         const key = repKeyByUser[ue.user_id] ?? `user:${ue.user_id}`;
         const error = ue.error ?? null;
@@ -151,15 +191,17 @@
               promoByUserId[uid] = promoCandidate;
             }
             const cacheKey = `${promoCandidate}::${selectedDate}`;
-            // On met en cache les événements pour cette promo + date
             promoEventsCache[cacheKey] = events;
+            cacheUpdated = true;
           }
         } else if (key.startsWith("promo:") && events.length > 0) {
           const promoName = key.slice("promo:".length);
           const cacheKey = `${promoName}::${selectedDate}`;
           promoEventsCache[cacheKey] = events;
+          cacheUpdated = true;
         }
       }
+      if (cacheUpdated) savePromoCacheToStorage();
 
       // 5) Reconstruire une liste d'événements par utilisateur (même si on a appelé l'API avec un seul user par promo)
       const expandedUserEvents: UserPlanningEvents[] = [];
@@ -233,7 +275,7 @@
     }
   }
 
-  $: if (browser && isReady && selectedDate && effectiveUserIds) {
+  $: if (browser && isReady && selectedDate && effectiveUserIds && promoCacheLoaded) {
     loadPlanningEvents();
   }
 
