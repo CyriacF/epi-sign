@@ -42,6 +42,11 @@
   let planningEventIdInput = "";
   let loadingEvents = false;
   let userEventsList: UserPlanningEvents[] = [];
+  // Cache local pour éviter de spammer EDSquare :
+  // - promoByUserId : mappe un user vers sa promo (ex: "MSc 2") déduite du titre du cours
+  // - promoEventsCache : mappe (promo, date) vers la liste d'événements de la journée
+  let promoByUserId: Record<string, string> = {};
+  let promoEventsCache: Record<string, EdsquarePlanningEvent[]> = {};
   let userEventOverrides: Record<string, string> = {};
   let userCodeOverrides: Record<string, string> = {};
   /** Un code par event id quand les cours diffèrent (même event = même code, partagé par plusieurs users) */
@@ -90,10 +95,91 @@
     }
     loadingEvents = true;
     try {
-      const res = await getPlanningEventsForUsers(selectedDate, effectiveUserIds);
-      userEventsList = res.user_events;
+      // 1) Grouper les utilisateurs par "promo" connue (sinon par utilisateur seul)
+      const groups: Record<string, string[]> = {};
+      for (const userId of effectiveUserIds) {
+        const promo = promoByUserId[userId];
+        const key = promo ? `promo:${promo}` : `user:${userId}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(userId);
+      }
 
-      const okUsers = res.user_events.filter((ue) => !ue.error && ue.events.length > 0);
+      // 2) Déterminer quels groupes ont déjà leurs cours en cache pour cette date,
+      //    et quels groupes nécessitent un appel backend.
+      const repsToFetch: string[] = [];
+      const repKeyByUser: Record<string, string> = {};
+      const resultsByGroup: Record<string, { events: EdsquarePlanningEvent[]; error: string | null }> = {};
+
+      for (const [key, ids] of Object.entries(groups)) {
+        const promoMatch = key.startsWith("promo:") ? key.slice("promo:".length) : null;
+        if (promoMatch) {
+          const cacheKey = `${promoMatch}::${selectedDate}`;
+          const cached = promoEventsCache[cacheKey];
+          if (cached) {
+            resultsByGroup[key] = { events: cached, error: null };
+            continue;
+          }
+        }
+        // Pas de cache : on choisit un représentant pour ce groupe
+        const repId = ids[0];
+        repsToFetch.push(repId);
+        repKeyByUser[repId] = key;
+      }
+
+      // 3) Appel backend uniquement pour les groupes non cachés
+      let apiUserEvents: UserPlanningEvents[] = [];
+      if (repsToFetch.length > 0) {
+        const res = await getPlanningEventsForUsers(selectedDate, repsToFetch);
+        apiUserEvents = res.user_events;
+      }
+
+      // 4) Mettre à jour les résultats et déduire la promo quand c'est possible
+      for (const ue of apiUserEvents) {
+        const key = repKeyByUser[ue.user_id] ?? `user:${ue.user_id}`;
+        const error = ue.error ?? null;
+        const events = ue.events ?? [];
+        resultsByGroup[key] = { events, error };
+
+        // Si on a au moins un cours et qu'on n'a pas encore de promo, essayer de la déduire du titre :
+        // Format typique : "MSc 2 — 2026-02-13 09:30 → 13:00"
+        if (!key.startsWith("promo:") && events.length > 0) {
+          const firstTitle = events[0].title || "";
+          const promoCandidate = firstTitle.split("—")[0].trim();
+          if (promoCandidate) {
+            const groupUserIds = groups[key] ?? [ue.user_id];
+            for (const uid of groupUserIds) {
+              promoByUserId[uid] = promoCandidate;
+            }
+            const cacheKey = `${promoCandidate}::${selectedDate}`;
+            // On met en cache les événements pour cette promo + date
+            promoEventsCache[cacheKey] = events;
+          }
+        } else if (key.startsWith("promo:") && events.length > 0) {
+          const promoName = key.slice("promo:".length);
+          const cacheKey = `${promoName}::${selectedDate}`;
+          promoEventsCache[cacheKey] = events;
+        }
+      }
+
+      // 5) Reconstruire une liste d'événements par utilisateur (même si on a appelé l'API avec un seul user par promo)
+      const expandedUserEvents: UserPlanningEvents[] = [];
+      for (const [key, ids] of Object.entries(groups)) {
+        const groupResult = resultsByGroup[key];
+        if (!groupResult) continue;
+        for (const uid of ids) {
+          const userInfo = users.find((u) => u.id === uid);
+          expandedUserEvents.push({
+            user_id: uid,
+            username: userInfo?.username ?? groupResult.error ? "<unknown>" : "",
+            events: groupResult.events,
+            error: groupResult.error,
+          });
+        }
+      }
+
+      userEventsList = expandedUserEvents;
+
+      const okUsers = userEventsList.filter((ue) => !ue.error && ue.events.length > 0);
       if (okUsers.length === 0) {
         planningEvents = [];
         selectedEventId = "";
@@ -575,6 +661,7 @@
                 loading={false}
                 mode="edsquare"
                 edsquareEligibleIds={eligibleUserIds}
+                promoByUserId={promoByUserId}
                 on:userToggle={handleUserToggle}
               />
             {/if}

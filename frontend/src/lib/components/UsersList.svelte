@@ -15,6 +15,8 @@
   export let mode: "jwt" | "edsquare" = "jwt";
   // Utilisé uniquement en mode "edsquare" : liste des IDs d'utilisateurs prêts EDSquare
   export let edsquareEligibleIds: string[] = [];
+  // Promo par user_id (ex: "MSc 2", "W@C") — affichée sur chaque carte en mode edsquare
+  export let promoByUserId: Record<string, string> = {};
 
   const dispatch = createEventDispatcher();
 
@@ -59,6 +61,7 @@
             canValidate={mode === "edsquare"
               ? edsquareEligibleIds.includes(currentUserData.id)
               : null}
+            promo={mode === "edsquare" ? (promoByUserId[currentUserData.id] ?? null) : null}
             on:toggle={handleUserToggle}
           />
           <!-- Séparateur simple -->
@@ -91,6 +94,7 @@
               canValidate={mode === "edsquare"
                 ? edsquareEligibleIds.includes(user.id)
                 : null}
+              promo={mode === "edsquare" ? (promoByUserId[user.id] ?? null) : null}
               on:toggle={handleUserToggle}
             />
           </div>

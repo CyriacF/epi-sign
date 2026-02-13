@@ -15,6 +15,8 @@
   // Pour le mode "edsquare" : indique si l'utilisateur est prêt (signature + cookies)
   // Si null, on considère l'utilisateur comme cliquable par défaut
   export let canValidate: boolean | null = null;
+  // Promo détectée (ex: "MSc 2", "W@C") — affichée en mode edsquare
+  export let promo: string | null = null;
 
   const dispatch = createEventDispatcher();
 
@@ -110,6 +112,11 @@
       <div class="text-xs text-gray-400 truncate font-mono">
         {user.id}
       </div>
+      {#if mode === "edsquare" && promo}
+        <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30">
+          {promo}
+        </span>
+      {/if}
     </div>
 
     <div class="flex-shrink-0">
